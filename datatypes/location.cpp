@@ -4,5 +4,6 @@ class Location {
 private:
 public:
 	std::vector<Person> people;
-	float interaction;
+	float interaction_level;
 	virtual int duration(Person p);
+}
