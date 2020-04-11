@@ -1,5 +1,9 @@
 #include <iostream>
-#include <fstream>
+#include <vector>
+
+#include "./datatypes/location.cpp"
+#include "./datatypes/person.cpp"
+#include "./datatypes/disease.cpp"
 
 int main(int argc, char** argv){
 	//TODO: parse args for input file name 
@@ -30,7 +34,7 @@ int main(int argc, char** argv){
 		std::cout << "Infected: " << num_infected;
 		std::cout << "Recovered: " << num_recovered;
 		std::cout << "Deceased: " << num_deceased;
-		std::cout << std::endL;
+		std::cout << std::endl;
 
 		for(Location l : places){
 			//determine spread of infection from infected to healthy
