@@ -9,7 +9,7 @@ private:
 public:
 	std::vector<Person> people;
 	float interaction_level;
-	virtual int duration(Person p);
+	int duration(Person p);
 };
 
 #endif

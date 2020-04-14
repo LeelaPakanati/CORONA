@@ -1,0 +1,5 @@
+{
+	"population_size" : 150,
+	"num_locations" : 15,
+	"initial_infected" : 2
+}
