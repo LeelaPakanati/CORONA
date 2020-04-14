@@ -1,5 +1,13 @@
 {
 	"population_size" : 150,
 	"num_locations" : 15,
-	"initial_infected" : 2
+	"initial_infected" : 2,
+	"disease" : {
+					"SPREAD_FACTOR" : 0.1,
+					"CARRIER_PROBABILITY" : 0.1,
+					"AVERAGE_INCUBATION_DURATION" : 3.7,
+					"AVERAGE_TIME_DEATH" : 6.2,
+					"AVERAGE_TIME_RECOVERY" : 8.1,
+					"DEATH_RATE" : 0.035
+				}
 }

@@ -13,7 +13,6 @@
 using json = nlohmann::json;
 
 int main(int argc, char** argv){
-	//TODO: parse args for input file name 
 	if (argc < 2){
 		std::cerr << "Usage : " << argv[0] << " <input file>" << std::endl;
 		return 0;
@@ -22,24 +21,31 @@ int main(int argc, char** argv){
 	std::string input_file_name = argv[1];
 	std::cout << "Reading file " << input_file_name << " for starting conditions" << std::endl;
 
-	//TODO: Parse input file (configuration of people, places, and disease)
+	//TODO: Add disease configuration and more complex person/location config
 	std::ifstream input_file(input_file_name);
-	json jf = json::parse(input_file);
-	
-	int pop_size = jf.value("population_size", 0);
-	int num_locs = jf.value("num_locations", 0);
-
-	std::cout << "Num Population " << pop_size << "\tNum Locations " << num_locs << std::endl;
+	json input_json = json::parse(input_file);
 	
 	//TODO: Generate People and Places based on input
+	int pop_size = input_json.value("population_size", 0);
+	int num_locs = input_json.value("num_locations", 0);
+	
 	std::vector<Person> people(pop_size);
 	std::vector<Location> places(num_locs);
 	
 	//TODO: Configure disease based on input argument
-	Disease disease(.1, .1, 2.5, 6.2, .02);
+	json disease_json = input_json.value("disease", input_json);
+	float SF = disease_json.value("SPREAD_FACTOR", 0.0);
+	float CP = disease_json.value("CARRIER_PROBABILITY", 0.0);
+	float AID = disease_json.value("AVERAGE_INCUBATION_DURATION", 0.0);
+	float ATD = disease_json.value("AVERAGE_TIME_DEATH", 0.0);
+	float ATR = disease_json.value("AVERAGE_TIME_RECOVERY", 0.0);
+	float DR = disease_json.value("DEATH_RATE", 0.0);
+	
+	Disease disease(SF, CP, AID, ATD, ATR, DR);
+	return 0;
 
 	// Susciptible/Infected/Recovered/Deceased
-	int num_infected = jf.value("initial_infected", 0); //TODO: get initial infected from input file
+	int num_infected = input_json.value("initial_infected", 0); //TODO: get initial infected from input file
 	int num_susciptible = pop_size - num_infected;
 	int num_recovered = 0;
 	int num_deceased = 0;

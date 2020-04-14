@@ -6,10 +6,11 @@ class Disease {
 	float SPREAD_FACTOR;
 	float CARRIER_PROBABILITY;
 	float AVERAGE_INCUBATION_DURATION;
-	float AVERAGE_INFECTION_DURATION;
-	float DEATH_PROBABILITY;
+	float AVERAGE_TIME_DEATH;
+	float AVERAGE_TIME_RECOVERY;
+	float DEATH_RATE;
 	
-	Disease(float spread_factor, float carrier_probability, float average_incubation_duration, float average_infection_duration, float death_probability);
+	Disease(float spread_factor, float carrier_probability, float average_incubation_duration, float average_time_death, float average_time_recovery, float death_rate);
 };
 
 #endif
