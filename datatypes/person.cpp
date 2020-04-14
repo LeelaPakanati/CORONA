@@ -1,9 +1,5 @@
-#include "infectionStatus.cpp"
+#include "person.h"
 
-class Person {
-private:
-public:
-	Location home;
-	Location work;
-	INFECTION_STATUS infectionStatus;
-};
+Person::Person(){
+
+}

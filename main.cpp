@@ -1,9 +1,9 @@
 #include <iostream>
 #include <vector>
 
-#include "./datatypes/location.cpp"
-#include "./datatypes/person.cpp"
-#include "./datatypes/disease.cpp"
+#include "./datatypes/location.h"
+#include "./datatypes/person.h"
+#include "./datatypes/disease.h"
 
 int main(int argc, char** argv){
 	//TODO: parse args for input file name 
