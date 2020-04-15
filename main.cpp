@@ -19,7 +19,7 @@ int main(int argc, char** argv){
 	}
 
 	std::string input_file_name = argv[1];
-	std::cout << "Reading file " << input_file_name << " for starting conditions" << std::endl;
+	std::clog << "Reading file " << input_file_name << " for starting conditions" << std::endl;
 
 	//TODO: Add disease configuration and more complex person/location config
 	std::ifstream input_file(input_file_name);
@@ -42,7 +42,6 @@ int main(int argc, char** argv){
 	float DR = disease_json.value("DEATH_RATE", 0.0);
 	
 	Disease disease(SF, CP, AID, ATD, ATR, DR);
-	return 0;
 
 	// Susciptible/Infected/Recovered/Deceased
 	int num_infected = input_json.value("initial_infected", 0); //TODO: get initial infected from input file
@@ -50,17 +49,27 @@ int main(int argc, char** argv){
 	int num_recovered = 0;
 	int num_deceased = 0;
 
+	std::cout << "Susceptible,Infected,Recovered,Deceased" << std::endl;
 	while (num_infected>0){
 		for (Person p : people){
 			//TODO: generate SIRD stats
 			//TODO: determine next location
 			//TODO: determine disease progression
 		}
-		std::cout << "Susciptible: " << num_susciptible;
-		std::cout << "\tInfected: " << num_infected;
-		std::cout << "\tRecovered: " << num_recovered;
-		std::cout << "\tDeceased: " << num_deceased;
-		std::cout << std::endl;
+		// test pattern
+		if((num_infected < num_susciptible) && (num_deceased == 0)){
+			num_infected++;
+			num_susciptible--;
+		} else{
+			num_deceased++;
+			num_infected--;
+		}
+		//std::cout << "Susciptible: " << num_susciptible;
+		//std::cout << "\tInfected: " << num_infected;
+		//std::cout << "\tRecovered: " << num_recovered;
+		//std::cout << "\tDeceased: " << num_deceased;
+		//std::cout << std::endl;
+		std::cout << num_susciptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
 
 		for (Location l : places){
 			//determine spread of infection from infected to healthy
