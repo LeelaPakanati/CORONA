@@ -10,7 +10,11 @@ df_len = data.shape[0]
 
 data = data.divide(data.sum(axis=1), axis=0)
 
-plt.stackplot(range(1, df_len+1), data["Infected"], data["Susceptible"], data["Recovered"], data["Deceased"], labels = ["Infected", "Susceptible", "Recovered", "Deceased"])
+#plt.stackplot(range(1, df_len+1), data["Infected"], data["Susceptible"], data["Recovered"], data["Deceased"], labels = ["Infected", "Susceptible", "Recovered", "Deceased"])
+plt.plot(data["Infected"])
+plt.plot(data["Susceptible"])
+plt.plot(data["Recovered"])
+plt.plot(data["Deceased"])
 
 plt.legend(loc = "upper left")
 

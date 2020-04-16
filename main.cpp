@@ -119,9 +119,9 @@ int main(int argc, char** argv){
 					places[loc_idx].people_next_step.push_back( places[loc_idx].people[person_idx] );
 				}
 			}
-
 		}
 
+		// Track Stats and progress infection in people
 		for (int loc_idx = 0; loc_idx < places.size(); loc_idx++){
 			// Get number of sick people and set of susceptible people
 			for (int person_idx = 0; person_idx < places[loc_idx].people_next_step.size(); person_idx++){
@@ -133,17 +133,20 @@ int main(int argc, char** argv){
 					case CARRIER:
 						num_infected++;
 
+						// TODO: Normal Distribution around average times
 						if (places[loc_idx].people_next_step[person_idx].state_count > (int) disease.AVERAGE_INCUBATION_DURATION){
 							places[loc_idx].people_next_step[person_idx].infection_status = SICK;
 							places[loc_idx].people_next_step[person_idx].state_count = 0;
+
 							// TODO: death rate based on age
 							float r = (float) rand() / RAND_MAX;
 							if (r < disease.DEATH_RATE)
 								places[loc_idx].people_next_step[person_idx].to_die = true;
 							else
 								places[loc_idx].people_next_step[person_idx].to_die = false;
+						} else {
+							places[loc_idx].people_next_step[person_idx].state_count++;
 						}
-						places[loc_idx].people_next_step[person_idx].state_count++;
 						break;
 					case SICK:
 						num_infected++;
