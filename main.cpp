@@ -22,8 +22,6 @@ int main(int argc, char** argv){
 	std::string input_file_name = argv[1];
 	std::clog << "Reading file " << input_file_name << " for starting conditions" << std::endl;
 
-	srand (time(NULL));
-
 	// TODO: Add  more complex person/location config
 	std::ifstream input_file(input_file_name);
 	json input_json = json::parse(input_file);
@@ -31,22 +29,23 @@ int main(int argc, char** argv){
 	int pop_size = input_json.value("population_size", 0);
 	int num_locs = input_json.value("num_locations", 0);
 	
-	std::vector<Person> people(pop_size);
-	std::vector<Location> places(num_locs);
+	//std::vector<Person> people;
+	std::vector<Location> places;
 
 	srand(time(NULL));
 
-	Location loc;
 	for(int i = 0; i < num_locs; i++) {
+		Location loc;
 		loc.interaction_level = 1.;
+		places.push_back(loc);
 		//TODO: do something with duration function (inheritance?)
 	}
 
-	Person person;
 	for(int i = 0; i < pop_size; i++) {
-		person.infectionStatus = HEALTHY;
+		Person person;
+		person.infection_status = SUSCEPTIBLE;
 		places[rand() % places.size()].people.push_back(person);
-		people.push_back(person);
+		//people.push_back(person);
 	}
 	
 	// Configure disease based on input argument
@@ -55,11 +54,13 @@ int main(int argc, char** argv){
 
 	int num_infected = input_json.value("initial_infected", 0);
 	int person_to_infect;
+	int location_to_infect;
 	for(int i = 0; i < num_infected; i++) {
 		do {
-			person_to_infect = rand() % pop_size;
-		} while(people[person_to_infect].infectionStatus != HEALTHY);
-		people[person_to_infect].infectionStatus = CARRIER;
+			location_to_infect = rand() % num_locs;
+			person_to_infect = rand() % places[location_to_infect].people.size();
+		} while(places[location_to_infect].people[person_to_infect].infection_status != SUSCEPTIBLE);
+		places[location_to_infect].people[person_to_infect].infection_status = CARRIER;
 	}
 
 	for(int i = 0; i < num_locs; i++) {
@@ -67,19 +68,62 @@ int main(int argc, char** argv){
 	}
 
 	// Susciptible/Infected/Recovered/Deceased
-	int num_susciptible = pop_size - num_infected;
+	int num_susceptible = pop_size - num_infected;
 	int num_recovered = 0;
 	int num_deceased = 0;
 
 	std::cout << "Susceptible,Infected,Recovered,Deceased" << std::endl;
 	while (num_infected > 0){
+		num_infected = num_susceptible = num_recovered = num_deceased = 0;
 		for (Location l : places){
 			//determine spread of infection from infected to healthy
 			std::vector<Person> susceptible_people;
 			int num_sick = 0;
 			
 			// Get number of sick people and set of susceptible people
-			for (Person p : people){
+			for (Person p : l.people){
+				switch (p.infection_status){
+					case SUSCEPTIBLE:
+						num_susceptible++;
+						p.state_count = 0;
+						break;
+					case CARRIER:
+						num_infected++;
+
+						if (p.state_count > (int) disease.AVERAGE_INCUBATION_DURATION){
+							p.infection_status = SICK;
+							p.state_count = 0;
+							// TODO: death rate based on age
+							float r = (float) rand() / RAND_MAX;
+							if (r < disease.DEATH_RATE)
+								p.to_die = true;
+							else
+								p.to_die = false;
+						}
+						p.state_count++;
+						break;
+					case SICK:
+						num_infected++;
+
+						if (p.to_die){
+							if (p.state_count > disease.AVERAGE_TIME_DEATH)
+								p.infection_status = DECEASED;
+						} else {
+							if (p.state_count > disease.AVERAGE_TIME_RECOVERY)
+								p.infection_status = RECOVERED;
+						}
+						p.state_count++;
+						break;
+					case RECOVERED:
+						num_recovered++;
+						break;
+					case DECEASED:
+						num_deceased++;
+						break;
+					default:
+						break;
+				}
+
 				if ((p.infection_status == SICK) || (p.infection_status == CARRIER))
 					num_sick++;
 				else if (p.infection_status == SUSCEPTIBLE)
@@ -88,64 +132,16 @@ int main(int argc, char** argv){
 
 			// Determine spread from infected to susceptible
 			for (Person p : susceptible_people){
-				//TODO: better probability function; incorporate person's affinity to interaction
+				// TODO: better probability function; incorporate person's affinity to interaction
+				// TODO: depend on numsick
 				float infection_probability = disease.SPREAD_FACTOR * l.interaction_level;
-				if (rand() < infection_probability){
-					person.infection_status = CARRIER;
+				float r = (float) rand() / RAND_MAX;
+				if ( r < infection_probability){
+					//std::cout << "INFECTED" << std::endl;
+					p.infection_status = CARRIER;
 				}
 			}
 
-			// TODO: determine next location
-			for (Person p : people){
-				
-			}
-		}
-
-		for (Person p : people){
-			num_infected = num_susceptible = num_recovered = num_deceased = 0;
-
-		 	// generate SIRD stats and progress disease
-			// TODO: progression based on bell curve around average time
-			switch (p.infection_status){
-				case SUSCEPTIBLE:
-					num_susceptible++;
-					p.state_count = 0;
-					break;
-				case CARRIER:
-					num_infected++;
-
-					if (p.state_count > (int) disease.AVERAGE_INCUBATION_DURATION){
-						p.infection_status = SICK;
-						p.state_count = 0;
-						// TODO: death rate based on age
-						if (rand() < disease.DEATH_RATE)
-							p.to_die = true;
-						else
-							p.to_die = false;
-					}
-					p.state_count++;
-					break;
-				case SICK:
-					num_infected++;
-
-					if (p.to_die){
-						if (p.state_count > disease.AVERAGE_TIME_DEATH)
-							p.infection_status = DECEASED;
-					} else {
-						if (p.state_count > disease.AVERAGE_TIME_RECOVERY)
-							p.infection_status = RECOVERED;
-					}
-					p.state_count++;
-					break;
-				case RECOVERED:
-					num_recovered++;
-					break;
-				case DECEASED:
-					num_deceased++;
-					break;
-				default:
-					break;
-			}
 		}
 
 		//std::cout << "Susceptible: " << num_susceptible;
