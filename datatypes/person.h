@@ -6,7 +6,11 @@
 class Person {
 private:
 public:
-	INFECTION_STATUS infectionStatus;
+	INFECTION_STATUS infection_status;
+	int state_count;
+	bool to_die;
 };
+
+
 
 #endif
