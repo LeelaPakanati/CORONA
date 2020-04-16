@@ -2,6 +2,7 @@
 #include <fstream>
 #include <vector>
 #include <string>
+#include <ctime>
 #include <nlohmann/json.hpp>
 
 #include "./datatypes/location.cpp"
@@ -24,19 +25,45 @@ int main(int argc, char** argv){
 	std::ifstream input_file(input_file_name);
 	json input_json = json::parse(input_file);
 	
-	//TODO: Generate People and Places based on input
 	int pop_size = input_json.value("population_size", 0);
 	int num_locs = input_json.value("num_locations", 0);
 	
 	std::vector<Person> people(pop_size);
 	std::vector<Location> places(num_locs);
+
+	srand(time(NULL));
+
+	Location loc;
+	for(int i = 0; i < num_locs; i++) {
+		loc.interaction_level = 1.;
+		//TODO: do something with duration function (inheritance?)
+	}
+
+	Person person;
+	for(int i = 0; i < pop_size; i++) {
+		person.infectionStatus = HEALTHY;
+		places[rand() % places.size()].people.push_back(person);
+		people.push_back(person);
+	}
 	
 	//TODO: Configure disease based on input argument
 	json disease_json = input_json.value("disease", input_json);
 	Disease disease(disease_json);
 
+	int num_infected = input_json.value("initial_infected", 0);
+	int person_to_infect;
+	for(int i = 0; i < num_infected; i++) {
+		do {
+			person_to_infect = rand() % pop_size;
+		} while(people[person_to_infect].infectionStatus != HEALTHY);
+		people[person_to_infect].infectionStatus = CARRIER;
+	}
+
+	for(int i = 0; i < num_locs; i++) {
+		std::cout << "Location " << i << " has " << places[i].people.size() << " people." << std::endl;
+	}
+
 	// Susciptible/Infected/Recovered/Deceased
-	int num_infected = input_json.value("initial_infected", 0); //TODO: get initial infected from input file
 	int num_susciptible = pop_size - num_infected;
 	int num_recovered = 0;
 	int num_deceased = 0;
