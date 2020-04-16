@@ -1,5 +1,9 @@
 #ifndef Disease_h
 #define Disease_h
+#include <nlohmann/json.hpp>
+
+// for convenience
+using json = nlohmann::json;
 
 class Disease {
 	public:
@@ -10,7 +14,7 @@ class Disease {
 	float AVERAGE_TIME_RECOVERY;
 	float DEATH_RATE;
 	
-	Disease(float spread_factor, float carrier_probability, float average_incubation_duration, float average_time_death, float average_time_recovery, float death_rate);
+	Disease(json disease_json);
 };
 
 #endif

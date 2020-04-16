@@ -4,7 +4,6 @@
 #include <string>
 #include <nlohmann/json.hpp>
 
-
 #include "./datatypes/location.cpp"
 #include "./datatypes/person.cpp"
 #include "./datatypes/disease.cpp"
@@ -34,14 +33,7 @@ int main(int argc, char** argv){
 	
 	//TODO: Configure disease based on input argument
 	json disease_json = input_json.value("disease", input_json);
-	float SF = disease_json.value("SPREAD_FACTOR", 0.0);
-	float CP = disease_json.value("CARRIER_PROBABILITY", 0.0);
-	float AID = disease_json.value("AVERAGE_INCUBATION_DURATION", 0.0);
-	float ATD = disease_json.value("AVERAGE_TIME_DEATH", 0.0);
-	float ATR = disease_json.value("AVERAGE_TIME_RECOVERY", 0.0);
-	float DR = disease_json.value("DEATH_RATE", 0.0);
-	
-	Disease disease(SF, CP, AID, ATD, ATR, DR);
+	Disease disease(disease_json);
 
 	// Susciptible/Infected/Recovered/Deceased
 	int num_infected = input_json.value("initial_infected", 0); //TODO: get initial infected from input file
