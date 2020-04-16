@@ -31,7 +31,6 @@ int main(int argc, char** argv){
 	int pop_size = input_json.value("population_size", 0);
 	int num_locs = input_json.value("num_locations", 0);
 	
-	//std::vector<Person> people;
 	std::vector<Location> places;
 
 	srand(time(NULL));
@@ -50,7 +49,7 @@ int main(int argc, char** argv){
 	}
 
 	for(int i = 0; i < num_locs; i++) {
-		std::clog << "Location " << i << " has " << places[i].people.size() << " people." << std::endl;
+		std::clog << "Location " << i << " has " << places[i].people_next_step.size() << " people." << std::endl;
 	}
 	
 	// Configure disease based on input argument
@@ -64,9 +63,9 @@ int main(int argc, char** argv){
 	for(int i = 0; i < num_infected; i++) {
 		do {
 			location_to_infect = rand() % num_locs;
-			person_to_infect = rand() % places[location_to_infect].people.size();
-		} while(places[location_to_infect].people[person_to_infect].infection_status != SUSCEPTIBLE);
-		places[location_to_infect].people[person_to_infect].infection_status = CARRIER;
+			person_to_infect = rand() % places[location_to_infect].people_next_step.size();
+		} while(places[location_to_infect].people_next_step[person_to_infect].infection_status != SUSCEPTIBLE);
+		places[location_to_infect].people_next_step[person_to_infect].infection_status = CARRIER;
 		std::clog << location_to_infect << " has an infected person" << std::endl;
 	}
 
@@ -79,8 +78,6 @@ int main(int argc, char** argv){
 	while (num_infected > 0){
 		num_infected = num_susceptible = num_recovered = num_deceased = 0;
 		for (int loc_idx = 0; loc_idx < places.size(); loc_idx++){
-			std::clog << places[loc_idx].people.size() << "\t" << places[loc_idx].people_next_step.size() << std::endl;
-
 			places[loc_idx].people.swap(places[loc_idx].people_next_step);
 			places[loc_idx].people_next_step.clear();
 		}
@@ -127,38 +124,38 @@ int main(int argc, char** argv){
 
 		for (int loc_idx = 0; loc_idx < places.size(); loc_idx++){
 			// Get number of sick people and set of susceptible people
-			for (int person_idx = 0; person_idx < places[loc_idx].people.size(); person_idx++){
-				switch (places[loc_idx].people[person_idx].infection_status){
+			for (int person_idx = 0; person_idx < places[loc_idx].people_next_step.size(); person_idx++){
+				switch (places[loc_idx].people_next_step[person_idx].infection_status){
 					case SUSCEPTIBLE:
 						num_susceptible++;
-						places[loc_idx].people[person_idx].state_count = 0;
+						places[loc_idx].people_next_step[person_idx].state_count = 0;
 						break;
 					case CARRIER:
 						num_infected++;
 
-						if (places[loc_idx].people[person_idx].state_count > (int) disease.AVERAGE_INCUBATION_DURATION){
-							places[loc_idx].people[person_idx].infection_status = SICK;
-							places[loc_idx].people[person_idx].state_count = 0;
+						if (places[loc_idx].people_next_step[person_idx].state_count > (int) disease.AVERAGE_INCUBATION_DURATION){
+							places[loc_idx].people_next_step[person_idx].infection_status = SICK;
+							places[loc_idx].people_next_step[person_idx].state_count = 0;
 							// TODO: death rate based on age
 							float r = (float) rand() / RAND_MAX;
 							if (r < disease.DEATH_RATE)
-								places[loc_idx].people[person_idx].to_die = true;
+								places[loc_idx].people_next_step[person_idx].to_die = true;
 							else
-								places[loc_idx].people[person_idx].to_die = false;
+								places[loc_idx].people_next_step[person_idx].to_die = false;
 						}
-						places[loc_idx].people[person_idx].state_count++;
+						places[loc_idx].people_next_step[person_idx].state_count++;
 						break;
 					case SICK:
 						num_infected++;
 
-						if (places[loc_idx].people[person_idx].to_die){
-							if (places[loc_idx].people[person_idx].state_count > disease.AVERAGE_TIME_DEATH)
-								places[loc_idx].people[person_idx].infection_status = DECEASED;
+						if (places[loc_idx].people_next_step[person_idx].to_die){
+							if (places[loc_idx].people_next_step[person_idx].state_count > disease.AVERAGE_TIME_DEATH)
+								places[loc_idx].people_next_step[person_idx].infection_status = DECEASED;
 						} else {
-							if (places[loc_idx].people[person_idx].state_count > disease.AVERAGE_TIME_RECOVERY)
-								places[loc_idx].people[person_idx].infection_status = RECOVERED;
+							if (places[loc_idx].people_next_step[person_idx].state_count > disease.AVERAGE_TIME_RECOVERY)
+								places[loc_idx].people_next_step[person_idx].infection_status = RECOVERED;
 						}
-						places[loc_idx].people[person_idx].state_count++;
+						places[loc_idx].people_next_step[person_idx].state_count++;
 						break;
 					case RECOVERED:
 						num_recovered++;
@@ -172,12 +169,6 @@ int main(int argc, char** argv){
 			}
 		}
 
-		//std::cout << "Susceptible: " << num_susceptible;
-		//std::cout << "\tInfected: " << num_infected;
-		//std::cout << "\tRecovered: " << num_recovered;
-		//std::cout << "\tDeceased: " << num_deceased;
-		//std::cout << std::endl;
 		std::cout << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
-
 	}
 }
