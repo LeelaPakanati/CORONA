@@ -1,5 +1,6 @@
-#ifndef Disease_h
-#define Disease_h
+#ifndef DISEASE_H
+#define DISEASE_H
+
 #include <nlohmann/json.hpp>
 
 // for convenience
@@ -17,4 +18,4 @@ class Disease {
 	Disease(json disease_json);
 };
 
-#endif
+#endif //DISEASE_H
