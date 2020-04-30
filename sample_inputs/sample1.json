@@ -1,4 +1,5 @@
 {
+	"debug" : true,
 	"population_size" : 1500,
 	"num_locations" : 15,
 	"initial_infected" : 2,
