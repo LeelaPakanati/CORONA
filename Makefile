@@ -2,7 +2,7 @@ CC=g++
 
 all: sim
 
-dbg: main.cpp datatypes/*.cpp
+debug: main.cpp datatypes/*.cpp
 	$(CC) main.cpp -g -O0 -o main
 
 sim: main.cpp datatypes/*.cpp
