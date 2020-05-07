@@ -65,13 +65,13 @@ __global__ void spreadDisease(Location** dev_places, int num_places, int* place_
 	//determine spread of infection from infected to healthy
 	__shared__ int has_sick = 0;
 	
-	for(int i = 0; i < num_people/blockDim.x; i++){
+	for(int i = 0; i < num_people/blockDim.x+1; i++){
 		int personIdx = i*blockDim.x + threadIdx.x;
 		if(personIdx < num_people){
 			person_ptr = loc_ptr->people[personIdx];
 			// concurrency issue but only care if it 'ever' gets set to 1
 			if ((person_ptr->infection_status == SICK) || (person_ptr->infection_status == CARRIER)) {
-				num_sick = 1;
+				has_sick = 1;
 			}
 		}
 	}
@@ -80,16 +80,16 @@ __global__ void spreadDisease(Location** dev_places, int num_places, int* place_
 
 	// Propogate infections in places with infected people
 	if(has_sick > 0) {
-		for(int i = 0; i < num_people/blockDim.x; i++){
+		for(int i = 0; i < num_people/blockDim.x+1; i++){
 			int personIdx = i*blockDim.x + threadIdx.x;
 			if(personIdx < num_people){
 				person_ptr = loc_ptr->people[personIdx];
-
-				// TODO: scale infection probability properly
-				float infection_probability = disease->SPREAD_FACTOR * loc_ptr->interaction_level;
-				float r = curand_unifrom(&state);
-				if (r < infection_probability) {
-					person_ptr->infection_status = CARRIER;
+				if(person_ptr->infection_status){
+					float infection_probability = disease->SPREAD_FACTOR * loc_ptr->interaction_level;
+					float r = curand_unifrom(&state);
+					if (r < infection_probability) {
+						person_ptr->infection_status = CARRIER;
+					}
 				}
 			}
 		}
@@ -123,7 +123,7 @@ __global__ void advanceInfection(std::vector<Location> places, int num_places, i
 	curandState_t state;
 	cudarand_init(rand_seed, blockIdx.x*blockDim.x+threadIdx.x, 0, &state); 
 
-	for(int i = 0; i < num_people/blockDim.x; i++){
+	for(int i = 0; i < num_people/blockDim.x+1; i++){
 		int personIdx = i*blockDim.x + threadIdx.x;
 		if(personIdx < num_people){
 			person_ptr = loc_ptr->people[personIdx];
