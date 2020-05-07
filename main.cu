@@ -1,6 +1,5 @@
 #include <iostream>
 #include <fstream>
-#include <vector>
 #include <string>
 #include <ctime>
 #include <nlohmann/json.hpp>
@@ -19,45 +18,42 @@ bool DEBUG;
 // for convenience
 using json = nlohmann::json;
 
-void initialize(std::vector<Location*> *places, int numPeople, int numPlaces) {
-	Location* loc_ptr;
+void initialize(Location *places, int numPeople, int numPlaces, int maxSize) {
+
 	for(int i = 0; i < numPlaces; i++) {
-		Location* loc_ptr = (Location*) malloc(sizeof(Location));
-		Location loc;
-		loc.interaction_level = 1.;
-		*loc_ptr = loc;
-		places->push_back(loc_ptr);
-		//TODO: do something with duration function (inheritance?)
+		places[i].num_people = 0;
+		places[i].num_people_next_step = 0;
+		places[i].interaction_level = 1.;
 	}
 
+	int loc_idx;
 	for(int i = 0; i < numPeople; i++) {
-		Person* person_ptr = (Person*) malloc(sizeof(Person));
-		Person person;
-		person.infection_status = SUSCEPTIBLE;
-		*person_ptr = person;
-		Location* starting_loc = (*places)[rand() % places->size()];
-		starting_loc->people_next_step.push_back(person_ptr);
+		loc_idx = rand() % numPlaces;
+		places[loc_idx].people_next_step[places[loc_idx].num_people_next_step].infection_status = SUSCEPTIBLE;
+		places[loc_idx].people_next_step[places[loc_idx].num_people_next_step].state_count = 0;
+		places[loc_idx].people_next_step[places[loc_idx].num_people_next_step].to_die = 0;
+		places[loc_idx].people_next_step[places[loc_idx].num_people_next_step++].id = i;
 	}
 
 	for(int i = 0; i < numPlaces; i++) {
-		std::clog << "Location " << i << " has " << (*places)[i]->people_next_step.size() << " people." << std::endl;
+		std::clog << "Location " << i << " has " << places[i].num_people_next_step << " people." << std::endl;
 	}
 }
 
-void updateLocations(std::vector<Location*> *places, int n) {
-	Location* loc_ptr;
-	for (int loc_idx = 0; loc_idx < places->size(); loc_idx++) {
-		loc_ptr = (*places)[loc_idx];
-		loc_ptr->people.swap(loc_ptr->people_next_step);
-		loc_ptr->people_next_step.clear();
+void updateLocations(Location *places, int num_places) {
+	Person temp_people[MAX_LOCATION_CAPACITY];
+	for (int loc_idx = 0; loc_idx < num_places; loc_idx++) {
+		memcpy(temp_people, places[loc_idx].people, places[loc_idx].num_people * sizeof(Person));
+		memcpy(places[loc_idx].people, places[loc_idx].people_next_step, places[loc_idx].num_people_next_step * sizeof(Person));
+		memcpy(places[loc_idx].people_next_step, temp_people, places[loc_idx].num_people * sizeof(Person));
+		places[loc_idx].num_people = places[loc_idx].num_people_next_step;
+		places[loc_idx].num_people_next_step = 0;
 	}
 }
 
-__global__ void spreadDisease(Location** dev_places, int num_places, int* place_num_people, placeDisease* dev_disease, unsigned long rand_seed) {
-	Location* loc_ptr;
-	Person* person_ptr;
-	loc_ptr = &dev_places[blockIdx.x];
-	int num_people = place_num_people[blockIdx.x];
+__global__ void spreadDisease(Location* dev_places, int max_size,  Disease disease, unsigned long rand_seed) {
+	int loc_idx = blockIdx.x;
+	int person_idx;
 
 	curandState_t state;
 	cudarand_init(rand_seed, blockIdx.x*blockDim.x+threadIdx.x, 0, &state); 
@@ -65,12 +61,12 @@ __global__ void spreadDisease(Location** dev_places, int num_places, int* place_
 	//determine spread of infection from infected to healthy
 	__shared__ int has_sick = 0;
 	
-	for(int i = 0; i < num_people/blockDim.x+1; i++){
-		int personIdx = i*blockDim.x + threadIdx.x;
-		if(personIdx < num_people){
-			person_ptr = loc_ptr->people[personIdx];
+	for(int i = 0; i < dev_places[loc_idx].num_people/blockDim.x+1; i++){
+		personIdx = i*blockDim.x + threadIdx.x;
+
+		if(personIdx < dev_places[loc_idx].num_people){															// Minimal control divergence
 			// concurrency issue but only care if it 'ever' gets set to 1
-			if ((person_ptr->infection_status == SICK) || (person_ptr->infection_status == CARRIER)) {
+			if ((dev_places[loc_idx].people[person_idx].infection_status == SICK) || (dev_places[loc_idx].people[person_idx].infection_status == CARRIER)) {			// A lot of control divergence
 				has_sick = 1;
 			}
 		}
@@ -80,15 +76,14 @@ __global__ void spreadDisease(Location** dev_places, int num_places, int* place_
 
 	// Propogate infections in places with infected people
 	if(has_sick > 0) {
-		for(int i = 0; i < num_people/blockDim.x+1; i++){
+		for(int i = 0; i < dev_places[loc_idx].num_people/blockDim.x+1; i++){
 			int personIdx = i*blockDim.x + threadIdx.x;
-			if(personIdx < num_people){
-				person_ptr = loc_ptr->people[personIdx];
-				if(person_ptr->infection_status == SUSCEPTIBLE){
-					float infection_probability = disease->SPREAD_FACTOR * loc_ptr->interaction_level;
+			if(personIdx < dev_places[loc_idx].num_people){															// Minimal control divergence
+				if(dev_places[loc_idx].people[person_idx].infection_status == SUSCEPTIBLE){										// A lot of control divergence
+					float infection_probability = disease.SPREAD_FACTOR * dev_places[loc_idx].interaction_level;
 					float r = curand_unifrom(&state);
-					if (r < infection_probability) {
-						person_ptr->infection_status = CARRIER;
+					if (r < infection_probability) {													// A lot of control divergence
+						dev_places[loc_idx].people[person_idx].infection_status = CARRIER;
 					}
 				}
 			}
@@ -96,61 +91,40 @@ __global__ void spreadDisease(Location** dev_places, int num_places, int* place_
 	}
 }
 
-void findNextLocations(std::vector<Location*> *places, int numPlaces) {
-	Location* loc_ptr;
-	Person* person_ptr;
-	for (int loc_idx = 0; loc_idx < numPlaces; loc_idx++) {
-		loc_ptr = (*places)[loc_idx];
-		for (int person_idx = 0; person_idx < loc_ptr->people.size(); person_idx++) {
-			person_ptr = loc_ptr->people[person_idx];
-			float r = (float) rand() / RAND_MAX;
-			if(r < MOVEMENT_PROBABILITY) {
-				int new_loc = rand() % numPlaces;
-				(*places)[new_loc]->people_next_step.push_back( person_ptr );
-			} else {
-				loc_ptr->people_next_step.push_back( person_ptr );
-			}
-		}
-	}
-}
-
-__global__ void advanceInfection(std::vector<Location> places, int num_places, int* place_num_people, Disease* disease, int* susceptible, int* infected, int* recovered, int* deceased, unsigned long rand_seed){
-	Location* loc_ptr;
-	Person* person_ptr;
-	loc_ptr = &dev_places[blockIdx.x];
-	int num_people = place_num_people[blockIdx.x];
+__global__ void advanceInfection(Location* dev_places, int max_size, Disease disease, unsigned long rand_seed){
+	int loc_idx = blockIdx.x;
+	int person_idx;
 
 	curandState_t state;
 	cudarand_init(rand_seed, blockIdx.x*blockDim.x+threadIdx.x, 0, &state); 
 
-	for(int i = 0; i < num_people/blockDim.x+1; i++){
+	for(int i = 0; i < dev_places[loc_idx].num_people/blockDim.x+1; i++){
 		int personIdx = i*blockDim.x + threadIdx.x;
-		if(personIdx < num_people){
-			person_ptr = loc_ptr->people[personIdx];
-			switch (person_ptr->infection_status) {
+		if(personIdx < dev_places[loc_idx].num_people){															// Minimal control divergence
+			switch (dev_places[loc_idx].people[person_idx].infection_status) {
 				case CARRIER:
 					// TODO: Normal Distribution around average times
-					if (person_ptr->state_count > (int) disease->AVERAGE_INCUBATION_DURATION) {
-						person_ptr->infection_status = SICK;
-						person_ptr->state_count = 0;
+					if (dev_places[loc_idx].people[person_idx].state_count > (int) disease.AVERAGE_INCUBATION_DURATION) {
+						dev_places[loc_idx].people[person_idx].infection_status = SICK;
+						dev_places[loc_idx].people[person_idx].state_count = 0;
 
 						// TODO: death rate based on age
 						float r = curand_normal(&state);
-						person_ptr->to_die = (r < disease->DEATH_RATE);
+						dev_places[loc_idx].people[person_idx].to_die = (r < disease.DEATH_RATE);
 					} else {
-						person_ptr->state_count++;
+						dev_places[loc_idx].people[person_idx].state_count++;
 					}
 					break;
 
 				case SICK:
-					if (person_ptr->to_die) {
-						if (person_ptr->state_count > disease->AVERAGE_TIME_DEATH)
-							person_ptr->infection_status = DECEASED;
+					if (dev_places[loc_idx].people[person_idx].to_die) {
+						if (dev_places[loc_idx].people[person_idx].state_count > disease.AVERAGE_TIME_DEATH)
+							dev_places[loc_idx].people[person_idx].infection_status = DECEASED;
 					} else {
-						if (person_ptr->state_count > disease->AVERAGE_TIME_RECOVERY)
-							person_ptr->infection_status = RECOVERED;
+						if (dev_places[loc_idx].people[person_idx].state_count > disease.AVERAGE_TIME_RECOVERY)
+							dev_places[loc_idx].people[person_idx].infection_status = RECOVERED;
 					}
-					person_ptr->state_count++;
+					dev_places[loc_idx].people[person_idx].state_count++;
 					break;
 				default:
 					break;
@@ -160,19 +134,30 @@ __global__ void advanceInfection(std::vector<Location> places, int num_places, i
 }
 
 
-void collectStatistics(std::vector<Location*> *places, int n, Disease* disease, int* susceptible, int* infected, int* recovered, int* deceased) {
+void findNextLocations(Location *places, int numPlaces, int maxSize) {
+	int new_loc_idx;
+	for (int loc_idx = 0; loc_idx < numPlaces; loc_idx++) {
+		for (int person_idx = 0; person_idx < places[loc_idx].num_people; person_idx++) {
+			float r = (float) rand() / RAND_MAX;
+			new_loc_idx = rand() % numPlaces;
+			if(r < MOVEMENT_PROBABILITY && places[new_loc_idx].num_people_next_step < maxSize - 1) {
+				memcpy(&places[new_loc_idx].people_next_step[places[new_loc_idx].num_people_next_step++], &places[loc_idx].people[person_idx], sizeof(Person));
+			} else {
+				memcpy(&places[loc_idx].people_next_step[places[loc_idx].num_people_next_step++], &places[loc_idx].people[person_idx], sizeof(Person));
+			}
+		}
+	}
+}
+
+void collectStatistics(Location *places, int numPlaces, Disease* disease, int* susceptible, int* infected, int* recovered, int* deceased) {
 	(*susceptible) = 0;
 	(*infected) = 0;
 	(*recovered) = 0;
 	(*deceased) = 0;
-	Location* loc_ptr;
-	Person* person_ptr;
-	for (int loc_idx = 0; loc_idx < places->size(); loc_idx++) {
-		loc_ptr = (*places)[loc_idx];
+	for (int loc_idx = 0; loc_idx < numPlaces; loc_idx++) {
 		// Get number of sick people and set of susceptible people
-		for (int person_idx = 0; person_idx < loc_ptr->people.size(); person_idx++) {
-			person_ptr = loc_ptr->people[person_idx];
-			switch (person_ptr->infection_status) {
+		for (int person_idx = 0; person_idx < places[loc_idx].num_people; person_idx++) {
+			switch (places[loc_idx].people[person_idx].infection_status) {
 				case SUSCEPTIBLE:
 					(*susceptible)++;
 					break;
@@ -213,19 +198,25 @@ int main(int argc, char** argv){
 	
 	int pop_size = input_json.value("population_size", 0);
 	int num_locs = input_json.value("num_locations", 0);
+	int max_size = input_json.value("max_size", 0);
 	DEBUG = input_json.value("debug", 0);
-
-	srand(time(NULL));
 	
 	// All other references to these objects should be pointers or arrays of pointers
-	std::vector<Location*> places;
-	std::vector<Person*> people;
+	Location *places = (Location*) malloc(num_locs * sizeof(Location));
+	Location* dev_places;
+	cudaMalloc((void **) &dev_places, num_locs * sizeof(struct Location));
 
-	initialize(&places, pop_size, num_locs);
+	initialize(places, pop_size, num_locs, max_size);
 	
 	// Configure disease based on input argument
 	json disease_json = input_json.value("disease", input_json);
-	Disease disease(disease_json);
+	Disease disease;
+	disease.SPREAD_FACTOR = disease_json.value("SPREAD_FACTOR", 0.0);
+	disease.CARRIER_PROBABILITY = disease_json.value("CARRIER_PROBABILITY", 0.0);
+	disease.AVERAGE_INCUBATION_DURATION = disease_json.value("AVERAGE_INCUBATION_DURATION", 0.0);
+	disease.AVERAGE_TIME_DEATH = disease_json.value("AVERAGE_TIME_DEATH", 0.0);
+	disease.AVERAGE_TIME_RECOVERY = disease_json.value("AVERAGE_TIME_RECOVERY", 0.0);
+	disease.DEATH_RATE = disease_json.value("DEATH_RATE", 0.0);
 
 	int num_infected = input_json.value("initial_infected", 0);
 	int person_to_infect;
@@ -237,9 +228,9 @@ int main(int argc, char** argv){
 	for(int i = 0; i < num_infected; i++) {
 		do {
 			location_to_infect = rand() % num_locs;
-			person_to_infect = rand() % places[location_to_infect]->people_next_step.size();
-		} while(places[location_to_infect]->people_next_step[person_to_infect]->infection_status != SUSCEPTIBLE);
-		places[location_to_infect]->people_next_step[person_to_infect]->infection_status = CARRIER;
+			person_to_infect = rand() % places[location_to_infect].num_people_next_step;
+		} while(places[location_to_infect].people_next_step[person_to_infect].infection_status != SUSCEPTIBLE);
+		places[location_to_infect].people_next_step[person_to_infect].infection_status = CARRIER;
 		if(DEBUG) {
 			std::clog << location_to_infect << " has an infected person" << std::endl;
 		}
@@ -248,20 +239,27 @@ int main(int argc, char** argv){
 	// Susciptible/Infected/Recovered/Deceased
 	int num_susceptible, num_recovered, num_deceased;
 
-	Location *loc_ptr;
-	Person *person_ptr;
-
 	dim3 dimGrid(num_locs, 1, 1);
 	dim3 dimGrid(256, 1, 1);
 
+	int long seed = time(NULL);
+
 	if(DEBUG) std::cout << "Susceptible,Infected,Recovered,Deceased" << std::endl;
 	for(int hour = 0; num_infected > 0 && hour < SIMULATION_LENGTH; hour++) {
-		updateLocations(&places, places.size());
-		num_infected = num_susceptible = num_recovered = num_deceased = 0;
-		collectStatistics(&places, places.size(), &disease, &num_susceptible, &num_infected, &num_recovered, &num_deceased);
-		advanceInfection<<<dimGrid, dimBlock>>>(....);		
-		spreadDisease<<<dimGrid, dimBlock>>>(....);		
-		findNextLocations(&places, places.size());
+		updateLocations(places, num_locs);
+		collectStatistics(places, num_locs, disease, &num_susceptible, &num_infected, &num_recovered, &num_deceased);
+
+		cudaMemcpy(dev_places, host_places, num_locs * sizeof(struct Location), cudaMemcpyHostToDevice);
+
+		spreadDisease<<<dimGrid, dimBlock>>>(dev_places, max_size, disease, seed);
+		advanceInfection<<<dimGrid, dimBlock>>>(dev_places, max_size, disease, seed);
+
+		cudaMemcpy(host_places, dev_places, num_locs * sizeof(struct Location), cudaMemcpyDeviceToHost);
+
+		findNextLocations(places, num_locs, max_size);
 		if(DEBUG) std::cout << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
 	}
+
+	free(places);
+	free(disease);
 }
