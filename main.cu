@@ -80,7 +80,7 @@ __global__ void spreadDisease(Location* places, Disease disease, unsigned long r
 
 	__syncthreads();
 	
-	bool spread = false;
+	bool spread = true;
 	for(int i = 0; i < BLOCK_WIDTH; i++)
 		if(has_sick[i])
 			spread = true;
@@ -122,7 +122,7 @@ __global__ void advanceInfection(Location* places, Disease disease, unsigned lon
 						places[loc_idx].people[person_idx].state_count = 0;
 
 						// TODO: death rate based on age
-						float r = curand_normal(&state);
+						float r = curand_uniform(&state);
 						places[loc_idx].people[person_idx].to_die = (r < disease.DEATH_RATE);
 					} else {
 						places[loc_idx].people[person_idx].state_count++;
