@@ -18,7 +18,7 @@ bool DEBUG;
 // for convenience
 using json = nlohmann::json;
 
-void initialize(Location *places, int numPeople, int numPlaces, int maxSize) {
+void initialize(Location *places, int numPeople, int numPlaces) {
 
 	for(int i = 0; i < numPlaces; i++) {
 		places[i].num_people = 0;
@@ -28,6 +28,7 @@ void initialize(Location *places, int numPeople, int numPlaces, int maxSize) {
 
 	int loc_idx;
 	for(int i = 0; i < numPeople; i++) {
+		//make sure within max size
 		loc_idx = rand() % numPlaces;
 		places[loc_idx].people_next_step[places[loc_idx].num_people_next_step].infection_status = SUSCEPTIBLE;
 		places[loc_idx].people_next_step[places[loc_idx].num_people_next_step].state_count = 0;
@@ -51,7 +52,7 @@ void updateLocations(Location *places, int num_places) {
 	}
 }
 
-void spreadDisease(Location *places, int num_places, int max_size, Disease* disease) {
+void spreadDisease(Location *places, int num_places, Disease* disease) {
 	for (int loc_idx = 0; loc_idx < num_places; loc_idx++) {
 
 		//determine spread of infection from infected to healthy
@@ -80,13 +81,13 @@ void spreadDisease(Location *places, int num_places, int max_size, Disease* dise
 	}
 }
 
-void findNextLocations(Location *places, int numPlaces, int maxSize) {
+void findNextLocations(Location *places, int numPlaces) {
 	int new_loc_idx;
 	for (int loc_idx = 0; loc_idx < numPlaces; loc_idx++) {
 		for (int person_idx = 0; person_idx < places[loc_idx].num_people; person_idx++) {
 			float r = (float) rand() / RAND_MAX;
 			new_loc_idx = rand() % numPlaces;
-			if(r < MOVEMENT_PROBABILITY && places[new_loc_idx].num_people_next_step < maxSize - 1) {
+			if(r < MOVEMENT_PROBABILITY && places[new_loc_idx].num_people_next_step < MAX_LOCATION_CAPACITY - 1) {
 				memcpy(&places[new_loc_idx].people_next_step[places[new_loc_idx].num_people_next_step++], &places[loc_idx].people[person_idx], sizeof(Person));
 			} else {
 				memcpy(&places[loc_idx].people_next_step[places[loc_idx].num_people_next_step++], &places[loc_idx].people[person_idx], sizeof(Person));
@@ -169,7 +170,6 @@ int main(int argc, char** argv){
 	
 	int pop_size = input_json.value("population_size", 0);
 	int num_locs = input_json.value("num_locations", 0);
-	int max_size = input_json.value("max_size", 0);
 	DEBUG = input_json.value("debug", 0);
 
 	srand(time(NULL));
@@ -177,7 +177,7 @@ int main(int argc, char** argv){
 	// All other references to these objects should be pointers or arrays of pointers
 	Location *places = (Location*) malloc(num_locs * sizeof(Location));
 
-	initialize(places, pop_size, num_locs, max_size);
+	initialize(places, pop_size, num_locs);
 	
 	// Configure disease based on input argument
 	json disease_json = input_json.value("disease", input_json);
@@ -214,8 +214,8 @@ int main(int argc, char** argv){
 	for(int hour = 0; num_infected > 0 && hour < SIMULATION_LENGTH; hour++) {
 		updateLocations(places, num_locs);
 		collectStatistics(places, num_locs, disease, &num_susceptible, &num_infected, &num_recovered, &num_deceased);
-		spreadDisease(places, num_locs, max_size, disease);
-		findNextLocations(places, num_locs, max_size);
+		spreadDisease(places, num_locs, disease);
+		findNextLocations(places, num_locs);
 		if(DEBUG) std::cout << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
 	}
 

@@ -20,7 +20,7 @@ bool DEBUG;
 // for convenience
 using json = nlohmann::json;
 
-void initialize(Location *places, int numPeople, int numPlaces, int maxSize) {
+void initialize(Location *places, int numPeople, int numPlaces) {
 
 	for(int i = 0; i < numPlaces; i++) {
 		places[i].num_people = 0;
@@ -30,6 +30,7 @@ void initialize(Location *places, int numPeople, int numPlaces, int maxSize) {
 
 	int loc_idx;
 	for(int i = 0; i < numPeople; i++) {
+		//make sure within max size
 		loc_idx = rand() % numPlaces;
 		places[loc_idx].people_next_step[places[loc_idx].num_people_next_step].infection_status = SUSCEPTIBLE;
 		places[loc_idx].people_next_step[places[loc_idx].num_people_next_step].state_count = 0;
@@ -53,7 +54,7 @@ void updateLocations(Location *places, int num_places) {
 	}
 }
 
-__global__ void spreadDisease(Location* dev_places, int max_size, int* has_sick, Disease disease, unsigned long rand_seed) {
+__global__ void spreadDisease(Location* dev_places, int* has_sick, Disease disease, unsigned long rand_seed) {
 	int loc_idx = blockIdx.x;
 	int person_idx;
 
@@ -93,7 +94,7 @@ __global__ void spreadDisease(Location* dev_places, int max_size, int* has_sick,
 	//}
 }
 
-__global__ void advanceInfection(Location* dev_places, int max_size, Disease disease, unsigned long rand_seed){
+__global__ void advanceInfection(Location* dev_places, Disease disease, unsigned long rand_seed){
 	int loc_idx = blockIdx.x;
 	int person_idx;
 
@@ -136,13 +137,13 @@ __global__ void advanceInfection(Location* dev_places, int max_size, Disease dis
 }
 
 
-void findNextLocations(Location *places, int numPlaces, int maxSize) {
+void findNextLocations(Location *places, int numPlaces) {
 	int new_loc_idx;
 	for (int loc_idx = 0; loc_idx < numPlaces; loc_idx++) {
 		for (int person_idx = 0; person_idx < places[loc_idx].num_people; person_idx++) {
 			float r = (float) rand() / RAND_MAX;
 			new_loc_idx = rand() % numPlaces;
-			if(r < MOVEMENT_PROBABILITY && places[new_loc_idx].num_people_next_step < maxSize - 1) {
+			if(r < MOVEMENT_PROBABILITY && places[new_loc_idx].num_people_next_step < MAX_LOCATION_CAPACITY - 1) {
 				memcpy(&places[new_loc_idx].people_next_step[places[new_loc_idx].num_people_next_step++], &places[loc_idx].people[person_idx], sizeof(Person));
 			} else {
 				memcpy(&places[loc_idx].people_next_step[places[loc_idx].num_people_next_step++], &places[loc_idx].people[person_idx], sizeof(Person));
@@ -256,12 +257,12 @@ int main(int argc, char** argv){
 
 		cudaMemcpy(dev_places, host_places, num_locs * sizeof(struct Location), cudaMemcpyHostToDevice);
 
-		spreadDisease<<<dimGrid, dimBlock>>>(dev_places, max_size, dev_has_sick, disease, seed);
-		advanceInfection<<<dimGrid, dimBlock>>>(dev_places, max_size, disease, seed);
+		spreadDisease<<<dimGrid, dimBlock>>>(dev_places, dev_has_sick, disease, seed);
+		advanceInfection<<<dimGrid, dimBlock>>>(dev_places, disease, seed);
 
 		cudaMemcpy(host_places, dev_places, num_locs * sizeof(struct Location), cudaMemcpyDeviceToHost);
 
-		findNextLocations(host_places, num_locs, max_size);
+		findNextLocations(host_places, num_locs);
 		if(DEBUG) std::cout << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
 	}
 
