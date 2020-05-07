@@ -3,8 +3,6 @@
 #include <vector>
 #include <string>
 #include <ctime>
-#include <cudarand.h>
-#include <cudarand_kernel.h>
 #include <nlohmann/json.hpp>
 
 #include "./datatypes/location.cpp"
@@ -21,34 +19,35 @@ bool DEBUG;
 // for convenience
 using json = nlohmann::json;
 
-void initialize(std::vector<Person> people, std::vector<Location> places, int numPeople, int numPlaces) {
-	Location *loc_ptr;
+void initialize(std::vector<Location*> *places, int numPeople, int numPlaces) {
+	Location* loc_ptr;
 	for(int i = 0; i < numPlaces; i++) {
+		Location* loc_ptr = (Location*) malloc(sizeof(Location));
 		Location loc;
-		loc_ptr = &loc;
-		loc_ptr->interaction_level = 1.;
-		places.push_back(*loc_ptr);
+		loc.interaction_level = 1.;
+		*loc_ptr = loc;
+		places->push_back(loc_ptr);
 		//TODO: do something with duration function (inheritance?)
 	}
 
-	Person *person_ptr;
 	for(int i = 0; i < numPeople; i++) {
+		Person* person_ptr = (Person*) malloc(sizeof(Person));
 		Person person;
-		person_ptr = &person;
-		person_ptr->infection_status = SUSCEPTIBLE;
-		people.push_back(*person_ptr);
-		places[rand() % places.size()].people_next_step.push_back(person_ptr);
+		person.infection_status = SUSCEPTIBLE;
+		*person_ptr = person;
+		Location* starting_loc = (*places)[rand() % places->size()];
+		starting_loc->people_next_step.push_back(person_ptr);
 	}
 
 	for(int i = 0; i < numPlaces; i++) {
-		std::clog << "Location " << i << " has " << places[i].people_next_step.size() << " people." << std::endl;
+		std::clog << "Location " << i << " has " << (*places)[i]->people_next_step.size() << " people." << std::endl;
 	}
 }
 
-void updateLocations(std::vector<Location> places, int n) {
+void updateLocations(std::vector<Location*> *places, int n) {
 	Location* loc_ptr;
-	for (int loc_idx = 0; loc_idx < places.size(); loc_idx++) {
-		loc_ptr = &places[loc_idx];
+	for (int loc_idx = 0; loc_idx < places->size(); loc_idx++) {
+		loc_ptr = (*places)[loc_idx];
 		loc_ptr->people.swap(loc_ptr->people_next_step);
 		loc_ptr->people_next_step.clear();
 	}
@@ -97,17 +96,20 @@ __global__ void spreadDisease(Location** dev_places, int num_places, int* place_
 	}
 }
 
-void findNextLocations(std::vector<Location> places, std::vector<Person> people, int numPlaces, int numPeople) {
+void findNextLocations(std::vector<Location*> *places, int numPlaces) {
 	Location* loc_ptr;
 	Person* person_ptr;
-	for(int person_idx = 0; person_idx < numPeople; person_idx++){
-		person_ptr = &people[person_idx];
-		float r = (float) rand() / RAND_MAX;
-		if(r < MOVEMENT_PROBABILITY) {
-			int new_loc = rand() % numPlaces;
-			places[new_loc].people_next_step.push_back( person_ptr );
-		} else {
-			loc_ptr->people_next_step.push_back( person_ptr );
+	for (int loc_idx = 0; loc_idx < numPlaces; loc_idx++) {
+		loc_ptr = (*places)[loc_idx];
+		for (int person_idx = 0; person_idx < loc_ptr->people.size(); person_idx++) {
+			person_ptr = loc_ptr->people[person_idx];
+			float r = (float) rand() / RAND_MAX;
+			if(r < MOVEMENT_PROBABILITY) {
+				int new_loc = rand() % numPlaces;
+				(*places)[new_loc]->people_next_step.push_back( person_ptr );
+			} else {
+				loc_ptr->people_next_step.push_back( person_ptr );
+			}
 		}
 	}
 }
@@ -158,58 +160,39 @@ __global__ void advanceInfection(std::vector<Location> places, int num_places, i
 }
 
 
-void collectStatistics(std::vector<Location> places, int n, Disease* disease, int* susceptible, int* infected, int* recovered, int* deceased, unsigned long rand_seed){
+void collectStatistics(std::vector<Location*> *places, int n, Disease* disease, int* susceptible, int* infected, int* recovered, int* deceased) {
+	(*susceptible) = 0;
+	(*infected) = 0;
+	(*recovered) = 0;
+	(*deceased) = 0;
 	Location* loc_ptr;
 	Person* person_ptr;
-	loc_ptr = &dev_places[blockIdx.x];
-	person_ptr = loc_ptr->people[threadIdx.x];
-
-	switch (person_ptr->infection_status) {
-		case SUSCEPTIBLE:
-			(*susceptible)++;
-			person_ptr->state_count = 0;
-			break;
-		case CARRIER:
-			(*infected)++;
-
-			// TODO: Normal Distribution around average times
-			if (person_ptr->state_count > (int) disease->AVERAGE_INCUBATION_DURATION) {
-				person_ptr->infection_status = SICK;
-				person_ptr->state_count = 0;
-
-				// TODO: death rate based on age
-				float r = (float) rand() / RAND_MAX;
-				if (r < disease->DEATH_RATE)
-					person_ptr->to_die = true;
-				else
-					person_ptr->to_die = false;
-			} else {
-				person_ptr->state_count++;
+	for (int loc_idx = 0; loc_idx < places->size(); loc_idx++) {
+		loc_ptr = (*places)[loc_idx];
+		// Get number of sick people and set of susceptible people
+		for (int person_idx = 0; person_idx < loc_ptr->people.size(); person_idx++) {
+			person_ptr = loc_ptr->people[person_idx];
+			switch (person_ptr->infection_status) {
+				case SUSCEPTIBLE:
+					(*susceptible)++;
+					break;
+				case CARRIER:
+					(*infected)++;
+					break;
+				case SICK:
+					(*infected)++;
+					break;
+				case RECOVERED:
+					(*recovered)++;
+					break;
+				case DECEASED:
+					(*deceased)++;
+					break;
+				default:
+					break;
 			}
-			break;
-		case SICK:
-			(*infected)++;
-
-			if (person_ptr->to_die) {
-				if (person_ptr->state_count > disease->AVERAGE_TIME_DEATH)
-					person_ptr->infection_status = DECEASED;
-			} else {
-				if (person_ptr->state_count > disease->AVERAGE_TIME_RECOVERY)
-					person_ptr->infection_status = RECOVERED;
-			}
-			person_ptr->state_count++;
-			break;
-		case RECOVERED:
-			(*recovered)++;
-			break;
-		case DECEASED:
-			(*deceased)++;
-			break;
-		default:
-			break;
+		}
 	}
-		
-	
 }
 
 int main(int argc, char** argv){
@@ -235,10 +218,10 @@ int main(int argc, char** argv){
 	srand(time(NULL));
 	
 	// All other references to these objects should be pointers or arrays of pointers
-	std::vector<Location> places;
-	std::vector<Person> people;
+	std::vector<Location*> places;
+	std::vector<Person*> people;
 
-	initialize(people, places, pop_size, num_locs);
+	initialize(&places, pop_size, num_locs);
 	
 	// Configure disease based on input argument
 	json disease_json = input_json.value("disease", input_json);
@@ -254,29 +237,31 @@ int main(int argc, char** argv){
 	for(int i = 0; i < num_infected; i++) {
 		do {
 			location_to_infect = rand() % num_locs;
-			person_to_infect = rand() % places[location_to_infect].people_next_step.size();
-		} while(people[person_to_infect].infection_status != SUSCEPTIBLE);
-		people[person_to_infect].infection_status = CARRIER;
+			person_to_infect = rand() % places[location_to_infect]->people_next_step.size();
+		} while(places[location_to_infect]->people_next_step[person_to_infect]->infection_status != SUSCEPTIBLE);
+		places[location_to_infect]->people_next_step[person_to_infect]->infection_status = CARRIER;
 		if(DEBUG) {
 			std::clog << location_to_infect << " has an infected person" << std::endl;
 		}
 	}
 
 	// Susciptible/Infected/Recovered/Deceased
-	int num_susceptible = pop_size - num_infected;
-	int num_recovered = 0;
-	int num_deceased = 0;
+	int num_susceptible, num_recovered, num_deceased;
 
 	Location *loc_ptr;
 	Person *person_ptr;
 
+	dim3 dimGrid(num_locs, 1, 1);
+	dim3 dimGrid(256, 1, 1);
+
 	if(DEBUG) std::cout << "Susceptible,Infected,Recovered,Deceased" << std::endl;
 	for(int hour = 0; num_infected > 0 && hour < SIMULATION_LENGTH; hour++) {
-		updateLocations(places, places.size());
-		spreadDisease(places, places.size(), &disease);
-		findNextLocations(places, people, places.size(), people.size());
+		updateLocations(&places, places.size());
 		num_infected = num_susceptible = num_recovered = num_deceased = 0;
-		collectStatistics(places, places.size(), &disease, &num_susceptible, &num_infected, &num_recovered, &num_deceased);
+		collectStatistics(&places, places.size(), &disease, &num_susceptible, &num_infected, &num_recovered, &num_deceased);
+		advanceInfection<<<dimGrid, dimBlock>>>(....);		
+		spreadDisease<<<dimGrid, dimBlock>>>(....);		
+		findNextLocations(&places, places.size());
 		if(DEBUG) std::cout << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
 	}
 }
