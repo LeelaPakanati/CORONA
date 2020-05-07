@@ -3,6 +3,8 @@
 #include <string>
 #include <ctime>
 #include <nlohmann/json.hpp>
+#include <curand.h>
+#include <curand_kernel.h>
 
 #include "./datatypes/location.cpp"
 #include "./datatypes/person.cpp"
@@ -56,15 +58,16 @@ __global__ void spreadDisease(Location* dev_places, int max_size,  Disease disea
 	int person_idx;
 
 	curandState_t state;
-	cudarand_init(rand_seed, blockIdx.x*blockDim.x+threadIdx.x, 0, &state); 
+	curand_init(rand_seed, blockIdx.x*blockDim.x+threadIdx.x, 0, &state); 
 
 	//determine spread of infection from infected to healthy
-	__shared__ int has_sick = 0;
+	__shared__ int has_sick;
+	has_sick = 0;
 	
 	for(int i = 0; i < dev_places[loc_idx].num_people/blockDim.x+1; i++){
-		personIdx = i*blockDim.x + threadIdx.x;
+		person_idx = i*blockDim.x + threadIdx.x;
 
-		if(personIdx < dev_places[loc_idx].num_people){															// Minimal control divergence
+		if(person_idx < dev_places[loc_idx].num_people){															// Minimal control divergence
 			// concurrency issue but only care if it 'ever' gets set to 1
 			if ((dev_places[loc_idx].people[person_idx].infection_status == SICK) || (dev_places[loc_idx].people[person_idx].infection_status == CARRIER)) {			// A lot of control divergence
 				has_sick = 1;
@@ -77,11 +80,11 @@ __global__ void spreadDisease(Location* dev_places, int max_size,  Disease disea
 	// Propogate infections in places with infected people
 	if(has_sick > 0) {
 		for(int i = 0; i < dev_places[loc_idx].num_people/blockDim.x+1; i++){
-			int personIdx = i*blockDim.x + threadIdx.x;
-			if(personIdx < dev_places[loc_idx].num_people){															// Minimal control divergence
+			person_idx = i*blockDim.x + threadIdx.x;
+			if(person_idx < dev_places[loc_idx].num_people){															// Minimal control divergence
 				if(dev_places[loc_idx].people[person_idx].infection_status == SUSCEPTIBLE){										// A lot of control divergence
 					float infection_probability = disease.SPREAD_FACTOR * dev_places[loc_idx].interaction_level;
-					float r = curand_unifrom(&state);
+					float r = curand_uniform(&state);
 					if (r < infection_probability) {													// A lot of control divergence
 						dev_places[loc_idx].people[person_idx].infection_status = CARRIER;
 					}
@@ -96,11 +99,11 @@ __global__ void advanceInfection(Location* dev_places, int max_size, Disease dis
 	int person_idx;
 
 	curandState_t state;
-	cudarand_init(rand_seed, blockIdx.x*blockDim.x+threadIdx.x, 0, &state); 
+	curand_init(rand_seed, blockIdx.x*blockDim.x+threadIdx.x, 0, &state); 
 
 	for(int i = 0; i < dev_places[loc_idx].num_people/blockDim.x+1; i++){
-		int personIdx = i*blockDim.x + threadIdx.x;
-		if(personIdx < dev_places[loc_idx].num_people){															// Minimal control divergence
+		person_idx = i*blockDim.x + threadIdx.x;
+		if(person_idx < dev_places[loc_idx].num_people){															// Minimal control divergence
 			switch (dev_places[loc_idx].people[person_idx].infection_status) {
 				case CARRIER:
 					// TODO: Normal Distribution around average times
@@ -149,7 +152,7 @@ void findNextLocations(Location *places, int numPlaces, int maxSize) {
 	}
 }
 
-void collectStatistics(Location *places, int numPlaces, Disease* disease, int* susceptible, int* infected, int* recovered, int* deceased) {
+void collectStatistics(Location *places, int numPlaces, int* susceptible, int* infected, int* recovered, int* deceased) {
 	(*susceptible) = 0;
 	(*infected) = 0;
 	(*recovered) = 0;
@@ -202,11 +205,11 @@ int main(int argc, char** argv){
 	DEBUG = input_json.value("debug", 0);
 	
 	// All other references to these objects should be pointers or arrays of pointers
-	Location *places = (Location*) malloc(num_locs * sizeof(Location));
+	Location *host_places = (Location*) malloc(num_locs * sizeof(Location));
 	Location* dev_places;
 	cudaMalloc((void **) &dev_places, num_locs * sizeof(struct Location));
 
-	initialize(places, pop_size, num_locs, max_size);
+	initialize(host_places, pop_size, num_locs, max_size);
 	
 	// Configure disease based on input argument
 	json disease_json = input_json.value("disease", input_json);
@@ -228,9 +231,9 @@ int main(int argc, char** argv){
 	for(int i = 0; i < num_infected; i++) {
 		do {
 			location_to_infect = rand() % num_locs;
-			person_to_infect = rand() % places[location_to_infect].num_people_next_step;
-		} while(places[location_to_infect].people_next_step[person_to_infect].infection_status != SUSCEPTIBLE);
-		places[location_to_infect].people_next_step[person_to_infect].infection_status = CARRIER;
+			person_to_infect = rand() % host_places[location_to_infect].num_people_next_step;
+		} while(host_places[location_to_infect].people_next_step[person_to_infect].infection_status != SUSCEPTIBLE);
+		host_places[location_to_infect].people_next_step[person_to_infect].infection_status = CARRIER;
 		if(DEBUG) {
 			std::clog << location_to_infect << " has an infected person" << std::endl;
 		}
@@ -240,14 +243,14 @@ int main(int argc, char** argv){
 	int num_susceptible, num_recovered, num_deceased;
 
 	dim3 dimGrid(num_locs, 1, 1);
-	dim3 dimGrid(256, 1, 1);
+	dim3 dimBlock(256, 1, 1);
 
 	int long seed = time(NULL);
 
 	if(DEBUG) std::cout << "Susceptible,Infected,Recovered,Deceased" << std::endl;
 	for(int hour = 0; num_infected > 0 && hour < SIMULATION_LENGTH; hour++) {
-		updateLocations(places, num_locs);
-		collectStatistics(places, num_locs, disease, &num_susceptible, &num_infected, &num_recovered, &num_deceased);
+		updateLocations(host_places, num_locs);
+		collectStatistics(host_places, num_locs, &num_susceptible, &num_infected, &num_recovered, &num_deceased);
 
 		cudaMemcpy(dev_places, host_places, num_locs * sizeof(struct Location), cudaMemcpyHostToDevice);
 
@@ -256,10 +259,10 @@ int main(int argc, char** argv){
 
 		cudaMemcpy(host_places, dev_places, num_locs * sizeof(struct Location), cudaMemcpyDeviceToHost);
 
-		findNextLocations(places, num_locs, max_size);
+		findNextLocations(host_places, num_locs, max_size);
 		if(DEBUG) std::cout << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
 	}
 
-	free(places);
-	free(disease);
+	free(host_places);
+	cudaFree(dev_places);
 }
