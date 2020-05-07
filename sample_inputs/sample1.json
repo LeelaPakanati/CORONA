@@ -1,7 +1,7 @@
 {
 	"debug" : true,
-	"population_size" : 1500,
-	"num_locations" : 15,
+	"population_size" : 15000,
+	"num_locations" : 400,
 	"max_size" : 300,
 	"initial_infected" : 2,
 	"disease" : {

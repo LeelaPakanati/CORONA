@@ -10,6 +10,7 @@
 #include "./datatypes/person.cpp"
 #include "./datatypes/disease.cpp"
 
+#define BLOCK_WIDTH 256
 // temporary
 #define MOVEMENT_PROBABILITY .1
 
@@ -38,7 +39,7 @@ void initialize(Location *places, int numPeople, int numPlaces) {
 		places[loc_idx].people_next_step[places[loc_idx].num_people_next_step++].id = i;
 	}
 
-	for(int i = 0; i < numPlaces; i++) {
+	for(int i = 1; i < numPlaces; i++) {
 		std::clog << "Location " << i << " has " << places[i].num_people_next_step << " people." << std::endl;
 	}
 }
@@ -54,7 +55,7 @@ void updateLocations(Location *places, int num_places) {
 	}
 }
 
-__global__ void spreadDisease(Location* dev_places, int* has_sick, Disease disease, unsigned long rand_seed) {
+__global__ void spreadDisease(Location* places, Disease disease, unsigned long rand_seed) {
 	int loc_idx = blockIdx.x;
 	int person_idx;
 
@@ -62,72 +63,81 @@ __global__ void spreadDisease(Location* dev_places, int* has_sick, Disease disea
 	curand_init(rand_seed, blockIdx.x*blockDim.x+threadIdx.x, 0, &state); 
 
 	//determine spread of infection from infected to healthy
-	has_sick[loc_idx] = 0;
+	__shared__ bool has_sick[BLOCK_WIDTH];
+	has_sick[threadIdx.x] = false;
+
+	__syncthreads();
 	
-	for(int i = 0; i < dev_places[loc_idx].num_people/blockDim.x+1; i++){
+	for(int i = 0; i < places[loc_idx].num_people/blockDim.x+1; i++){
 		person_idx = i*blockDim.x + threadIdx.x;
 
-		if(person_idx < dev_places[loc_idx].num_people){															// Minimal control divergence
-			// concurrency issue but only care if it 'ever' gets set to 1
-			if ((dev_places[loc_idx].people[person_idx].infection_status == SICK) || (dev_places[loc_idx].people[person_idx].infection_status == CARRIER)) {			// A lot of control divergence
-				has_sick[loc_idx] = 1;
+		if(person_idx < places[loc_idx].num_people){															// Minimal control divergence
+			if ((places[loc_idx].people[person_idx].infection_status == SICK) || (places[loc_idx].people[person_idx].infection_status == CARRIER)) {			// A lot of control divergence
+				has_sick[threadIdx.x] = true;
 			}
 		}
 	}
 
 	__syncthreads();
+	
+	bool spread = false;
+	for(int i = 0; i < BLOCK_WIDTH; i++)
+		if(has_sick[i])
+			spread = true;
+
+	__syncthreads();
 
 	// Propogate infections in places with infected people
-	//if(has_sick[loc_idx] > 0) {
-		for(int i = 0; i < dev_places[loc_idx].num_people/blockDim.x+1; i++){
+	if(spread) {
+		for(int i = 0; i < places[loc_idx].num_people/blockDim.x+1; i++){
 			person_idx = i*blockDim.x + threadIdx.x;
-			if(person_idx < dev_places[loc_idx].num_people){															// Minimal control divergence
-				if(dev_places[loc_idx].people[person_idx].infection_status == SUSCEPTIBLE){										// A lot of control divergence
-					float infection_probability = disease.SPREAD_FACTOR * dev_places[loc_idx].interaction_level;
+			if(person_idx < places[loc_idx].num_people){															// Minimal control divergence
+				if(places[loc_idx].people[person_idx].infection_status == SUSCEPTIBLE){										// A lot of control divergence
+					float infection_probability = disease.SPREAD_FACTOR * places[loc_idx].interaction_level;
 					float r = curand_uniform(&state);
 					if (r < infection_probability) {													// A lot of control divergence
-						dev_places[loc_idx].people[person_idx].infection_status = CARRIER;
+						places[loc_idx].people[person_idx].infection_status = CARRIER;
 					}
 				}
 			}
 		}
-	//}
+	}
 }
 
-__global__ void advanceInfection(Location* dev_places, Disease disease, unsigned long rand_seed){
+__global__ void advanceInfection(Location* places, Disease disease, unsigned long rand_seed){
 	int loc_idx = blockIdx.x;
 	int person_idx;
 
 	curandState_t state;
 	curand_init(rand_seed, blockIdx.x*blockDim.x+threadIdx.x, 0, &state); 
 
-	for(int i = 0; i < dev_places[loc_idx].num_people/blockDim.x+1; i++){
+	for(int i = 0; i < places[loc_idx].num_people/blockDim.x+1; i++){
 		person_idx = i*blockDim.x + threadIdx.x;
-		if(person_idx < dev_places[loc_idx].num_people){															// Minimal control divergence
-			switch (dev_places[loc_idx].people[person_idx].infection_status) {
+		if(person_idx < places[loc_idx].num_people){															// Minimal control divergence
+			switch (places[loc_idx].people[person_idx].infection_status) {
 				case CARRIER:
 					// TODO: Normal Distribution around average times
-					if (dev_places[loc_idx].people[person_idx].state_count > (int) disease.AVERAGE_INCUBATION_DURATION) {
-						dev_places[loc_idx].people[person_idx].infection_status = SICK;
-						dev_places[loc_idx].people[person_idx].state_count = 0;
+					if (places[loc_idx].people[person_idx].state_count > (int) disease.AVERAGE_INCUBATION_DURATION) {
+						places[loc_idx].people[person_idx].infection_status = SICK;
+						places[loc_idx].people[person_idx].state_count = 0;
 
 						// TODO: death rate based on age
 						float r = curand_normal(&state);
-						dev_places[loc_idx].people[person_idx].to_die = (r < disease.DEATH_RATE);
+						places[loc_idx].people[person_idx].to_die = (r < disease.DEATH_RATE);
 					} else {
-						dev_places[loc_idx].people[person_idx].state_count++;
+						places[loc_idx].people[person_idx].state_count++;
 					}
 					break;
 
 				case SICK:
-					if (dev_places[loc_idx].people[person_idx].to_die) {
-						if (dev_places[loc_idx].people[person_idx].state_count > disease.AVERAGE_TIME_DEATH)
-							dev_places[loc_idx].people[person_idx].infection_status = DECEASED;
+					if (places[loc_idx].people[person_idx].to_die) {
+						if (places[loc_idx].people[person_idx].state_count > disease.AVERAGE_TIME_DEATH)
+							places[loc_idx].people[person_idx].infection_status = DECEASED;
 					} else {
-						if (dev_places[loc_idx].people[person_idx].state_count > disease.AVERAGE_TIME_RECOVERY)
-							dev_places[loc_idx].people[person_idx].infection_status = RECOVERED;
+						if (places[loc_idx].people[person_idx].state_count > disease.AVERAGE_TIME_RECOVERY)
+							places[loc_idx].people[person_idx].infection_status = RECOVERED;
 					}
-					dev_places[loc_idx].people[person_idx].state_count++;
+					places[loc_idx].people[person_idx].state_count++;
 					break;
 				default:
 					break;
@@ -209,7 +219,7 @@ int main(int argc, char** argv){
 	Location* dev_places;
 	cudaMalloc((void **) &dev_places, num_locs * sizeof(struct Location));
 
-	initialize(host_places, pop_size, num_locs, max_size);
+	initialize(host_places, pop_size, num_locs);
 	
 	// Configure disease based on input argument
 	json disease_json = input_json.value("disease", input_json);
@@ -243,12 +253,9 @@ int main(int argc, char** argv){
 	int num_susceptible, num_recovered, num_deceased;
 
 	dim3 dimGrid(num_locs, 1, 1);
-	dim3 dimBlock(256, 1, 1);
+	dim3 dimBlock(BLOCK_WIDTH, 1, 1);
 
 	int long seed = time(NULL);
-
-	int* dev_has_sick; 
-	cudaMalloc((void**) &dev_has_sick, num_locs * sizeof(int));
 
 	if(DEBUG) std::cout << "Susceptible,Infected,Recovered,Deceased" << std::endl;
 	for(int hour = 0; num_infected > 0 && hour < SIMULATION_LENGTH; hour++) {
@@ -257,7 +264,7 @@ int main(int argc, char** argv){
 
 		cudaMemcpy(dev_places, host_places, num_locs * sizeof(struct Location), cudaMemcpyHostToDevice);
 
-		spreadDisease<<<dimGrid, dimBlock>>>(dev_places, dev_has_sick, disease, seed);
+		spreadDisease<<<dimGrid, dimBlock>>>(dev_places, disease, seed);
 		advanceInfection<<<dimGrid, dimBlock>>>(dev_places, disease, seed);
 
 		cudaMemcpy(host_places, dev_places, num_locs * sizeof(struct Location), cudaMemcpyDeviceToHost);
