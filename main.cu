@@ -5,6 +5,9 @@
 #include <nlohmann/json.hpp>
 #include <curand.h>
 #include <curand_kernel.h>
+#include <thrust/device_ptr.h>
+#include <thrust/functional.h>
+#include <thrust/reduce.h>
 
 #include "./datatypes/location.cpp"
 #include "./datatypes/person.cpp"
@@ -144,6 +147,37 @@ __global__ void advanceInfection(Location* places, Disease disease, unsigned lon
 	}
 }
 
+__global__ void collectStatistics(Location *places, int* susceptible, int* infected, int* recovered, int* deceased) {
+	int loc_idx = blockIdx.x;
+	int person_idx = threadIdx.x;
+	int idx = loc_idx * MAX_LOCATION_CAPACITY + person_idx;
+	susceptible[idx] = 0;
+	infected[idx] = 0;
+	recovered[idx] = 0;
+	deceased[idx] = 0;
+	if(person_idx < places[loc_idx].num_people){
+		switch (places[loc_idx].people[person_idx].infection_status) {
+			case SUSCEPTIBLE:
+				susceptible[idx] = 1;
+				break;
+			case CARRIER:
+				infected[idx] = 1;
+				break;
+			case SICK:
+				infected[idx] = 1;
+				break;
+			case RECOVERED:
+				recovered[idx] = 1;
+				break;
+			case DECEASED:
+				deceased[idx] = 1;
+				break;
+			default:
+				break;
+		}
+	}
+}
+
 
 void findNextLocations(Location *places, int numPlaces) {
 	int new_loc_idx;
@@ -155,37 +189,6 @@ void findNextLocations(Location *places, int numPlaces) {
 				memcpy(&places[new_loc_idx].people_next_step[places[new_loc_idx].num_people_next_step++], &places[loc_idx].people[person_idx], sizeof(Person));
 			} else {
 				memcpy(&places[loc_idx].people_next_step[places[loc_idx].num_people_next_step++], &places[loc_idx].people[person_idx], sizeof(Person));
-			}
-		}
-	}
-}
-
-void collectStatistics(Location *places, int numPlaces, int* susceptible, int* infected, int* recovered, int* deceased) {
-	(*susceptible) = 0;
-	(*infected) = 0;
-	(*recovered) = 0;
-	(*deceased) = 0;
-	for (int loc_idx = 0; loc_idx < numPlaces; loc_idx++) {
-		// Get number of sick people and set of susceptible people
-		for (int person_idx = 0; person_idx < places[loc_idx].num_people; person_idx++) {
-			switch (places[loc_idx].people[person_idx].infection_status) {
-				case SUSCEPTIBLE:
-					(*susceptible)++;
-					break;
-				case CARRIER:
-					(*infected)++;
-					break;
-				case SICK:
-					(*infected)++;
-					break;
-				case RECOVERED:
-					(*recovered)++;
-					break;
-				case DECEASED:
-					(*deceased)++;
-					break;
-				default:
-					break;
 			}
 		}
 	}
@@ -249,6 +252,11 @@ int main(int argc, char** argv){
 
 	// Susciptible/Infected/Recovered/Deceased
 	int num_susceptible, num_recovered, num_deceased;
+	int *d_num_susceptible, *d_num_recovered, *d_num_deceased, *d_num_infected;
+	cudaMalloc((void**) &d_num_susceptible, num_locs*MAX_LOCATION_CAPACITY*sizeof(int));
+	cudaMalloc((void**) &d_num_infected, num_locs*MAX_LOCATION_CAPACITY*sizeof(int));
+	cudaMalloc((void**) &d_num_recovered, num_locs*MAX_LOCATION_CAPACITY*sizeof(int));
+	cudaMalloc((void**) &d_num_deceased, num_locs*MAX_LOCATION_CAPACITY*sizeof(int));
 
 	int long seed = time(NULL);
 
@@ -260,9 +268,19 @@ int main(int argc, char** argv){
 		spreadDisease<<<num_locs, BLOCK_WIDTH>>>(dev_places, disease, seed);
 		advanceInfection<<<num_locs, BLOCK_WIDTH>>>(dev_places, disease, seed);
 
+		collectStatistics<<<num_locs, BLOCK_WIDTH>>>(dev_places, d_num_susceptible, d_num_infected, d_num_recovered, d_num_deceased);
+		thrust::device_ptr<int> d_sus_ptr(d_num_susceptible);
+		thrust::device_ptr<int> d_inf_ptr(d_num_infected);
+		thrust::device_ptr<int> d_rec_ptr(d_num_recovered);
+		thrust::device_ptr<int> d_dec_ptr(d_num_deceased);
+
+		num_susceptible = thrust::reduce(d_sus_ptr, d_sus_ptr + num_locs*MAX_LOCATION_CAPACITY);
+		num_infected = thrust::reduce(d_inf_ptr, d_inf_ptr + num_locs*MAX_LOCATION_CAPACITY);
+		num_recovered = thrust::reduce(d_rec_ptr, d_rec_ptr + num_locs*MAX_LOCATION_CAPACITY);
+		num_deceased = thrust::reduce(d_dec_ptr, d_dec_ptr + num_locs*MAX_LOCATION_CAPACITY);
+
 		cudaMemcpy(host_places, dev_places, num_locs * sizeof(struct Location), cudaMemcpyDeviceToHost);
 
-		collectStatistics(host_places, num_locs, &num_susceptible, &num_infected, &num_recovered, &num_deceased);
 		findNextLocations(host_places, num_locs);
 		if(DEBUG) std::cout << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
 	}
