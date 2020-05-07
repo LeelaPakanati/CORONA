@@ -84,7 +84,7 @@ __global__ void spreadDisease(Location** dev_places, int num_places, int* place_
 			int personIdx = i*blockDim.x + threadIdx.x;
 			if(personIdx < num_people){
 				person_ptr = loc_ptr->people[personIdx];
-				if(person_ptr->infection_status){
+				if(person_ptr->infection_status == SUSCEPTIBLE){
 					float infection_probability = disease->SPREAD_FACTOR * loc_ptr->interaction_level;
 					float r = curand_unifrom(&state);
 					if (r < infection_probability) {
