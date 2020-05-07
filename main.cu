@@ -53,7 +53,7 @@ void updateLocations(Location *places, int num_places) {
 	}
 }
 
-__global__ void spreadDisease(Location* dev_places, int max_size,  Disease disease, unsigned long rand_seed) {
+__global__ void spreadDisease(Location* dev_places, int max_size, int* has_sick, Disease disease, unsigned long rand_seed) {
 	int loc_idx = blockIdx.x;
 	int person_idx;
 
@@ -61,8 +61,7 @@ __global__ void spreadDisease(Location* dev_places, int max_size,  Disease disea
 	curand_init(rand_seed, blockIdx.x*blockDim.x+threadIdx.x, 0, &state); 
 
 	//determine spread of infection from infected to healthy
-	__shared__ int has_sick;
-	has_sick = 0;
+	has_sick[loc_idx] = 0;
 	
 	for(int i = 0; i < dev_places[loc_idx].num_people/blockDim.x+1; i++){
 		person_idx = i*blockDim.x + threadIdx.x;
@@ -70,7 +69,7 @@ __global__ void spreadDisease(Location* dev_places, int max_size,  Disease disea
 		if(person_idx < dev_places[loc_idx].num_people){															// Minimal control divergence
 			// concurrency issue but only care if it 'ever' gets set to 1
 			if ((dev_places[loc_idx].people[person_idx].infection_status == SICK) || (dev_places[loc_idx].people[person_idx].infection_status == CARRIER)) {			// A lot of control divergence
-				has_sick = 1;
+				has_sick[loc_idx] = 1;
 			}
 		}
 	}
@@ -78,7 +77,7 @@ __global__ void spreadDisease(Location* dev_places, int max_size,  Disease disea
 	__syncthreads();
 
 	// Propogate infections in places with infected people
-	if(has_sick > 0) {
+	//if(has_sick[loc_idx] > 0) {
 		for(int i = 0; i < dev_places[loc_idx].num_people/blockDim.x+1; i++){
 			person_idx = i*blockDim.x + threadIdx.x;
 			if(person_idx < dev_places[loc_idx].num_people){															// Minimal control divergence
@@ -91,7 +90,7 @@ __global__ void spreadDisease(Location* dev_places, int max_size,  Disease disea
 				}
 			}
 		}
-	}
+	//}
 }
 
 __global__ void advanceInfection(Location* dev_places, int max_size, Disease disease, unsigned long rand_seed){
@@ -247,6 +246,9 @@ int main(int argc, char** argv){
 
 	int long seed = time(NULL);
 
+	int* dev_has_sick; 
+	cudaMalloc((void**) &dev_has_sick, num_locs * sizeof(int));
+
 	if(DEBUG) std::cout << "Susceptible,Infected,Recovered,Deceased" << std::endl;
 	for(int hour = 0; num_infected > 0 && hour < SIMULATION_LENGTH; hour++) {
 		updateLocations(host_places, num_locs);
@@ -254,7 +256,7 @@ int main(int argc, char** argv){
 
 		cudaMemcpy(dev_places, host_places, num_locs * sizeof(struct Location), cudaMemcpyHostToDevice);
 
-		spreadDisease<<<dimGrid, dimBlock>>>(dev_places, max_size, disease, seed);
+		spreadDisease<<<dimGrid, dimBlock>>>(dev_places, max_size, dev_has_sick, disease, seed);
 		advanceInfection<<<dimGrid, dimBlock>>>(dev_places, max_size, disease, seed);
 
 		cudaMemcpy(host_places, dev_places, num_locs * sizeof(struct Location), cudaMemcpyDeviceToHost);
