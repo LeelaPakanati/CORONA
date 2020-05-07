@@ -4,13 +4,12 @@
 #include "infectionStatus.cpp"
 #include "location.h"
 
-class Location;
+struct Location;
 
-class Person {
-private:
-public:
-	Location * home;
-	Location * work;
+struct Person {
+	Location* home;
+	Location* work;
+	int id;
 	INFECTION_STATUS infection_status;
 	int state_count;
 	bool to_die;

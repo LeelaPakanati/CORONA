@@ -2,6 +2,7 @@
 	"debug" : true,
 	"population_size" : 1500,
 	"num_locations" : 15,
+	"max_size" : 300,
 	"initial_infected" : 2,
 	"disease" : {
 					"SPREAD_FACTOR" : 0.005,

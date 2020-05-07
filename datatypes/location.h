@@ -1,18 +1,18 @@
 #ifndef LOCATION_H
 #define LOCATION_H
 
-#include <vector>
 #include "person.h"
 
-class Person;
+struct Person;
 
-class Location {
-private:
-public:
-	std::vector<Person *> people;
-	std::vector<Person *> people_next_step;
+#define MAX_LOCATION_CAPACITY 256
+
+struct Location {
+	Person people[MAX_LOCATION_CAPACITY];
+	int num_people;
+	Person people_next_step[MAX_LOCATION_CAPACITY];
+	int num_people_next_step;
 	float interaction_level;
-	int duration(Person p);
 };
 
 #endif //LOCATION_H
