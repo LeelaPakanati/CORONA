@@ -44,15 +44,13 @@ void initialize(Location *places, int numPeople, int numPlaces) {
 	}
 }
 
-void updateLocations(Location *places, int num_places) {
-	Person temp_people[MAX_LOCATION_CAPACITY];
-	for (int loc_idx = 0; loc_idx < num_places; loc_idx++) {
-		memcpy(temp_people, places[loc_idx].people, places[loc_idx].num_people * sizeof(Person));
-		memcpy(places[loc_idx].people, places[loc_idx].people_next_step, places[loc_idx].num_people_next_step * sizeof(Person));
-		memcpy(places[loc_idx].people_next_step, temp_people, places[loc_idx].num_people * sizeof(Person));
-		places[loc_idx].num_people = places[loc_idx].num_people_next_step;
-		places[loc_idx].num_people_next_step = 0;
-	}
+__global__ void updateLocations(Location *places) {
+	int loc_idx = blockIdx.x;
+	//memcpy(temp_people, places[loc_idx].people, places[loc_idx].num_people * sizeof(Person));
+	memcpy(places[loc_idx].people, places[loc_idx].people_next_step, places[loc_idx].num_people_next_step * sizeof(Person));
+	//memcpy(places[loc_idx].people_next_step, temp_people, places[loc_idx].num_people * sizeof(Person));
+	places[loc_idx].num_people = places[loc_idx].num_people_next_step;
+	places[loc_idx].num_people_next_step = 0;
 }
 
 __global__ void spreadDisease(Location* places, Disease disease, unsigned long rand_seed) {
@@ -80,7 +78,7 @@ __global__ void spreadDisease(Location* places, Disease disease, unsigned long r
 
 	__syncthreads();
 	
-	bool spread = true;
+	bool spread = false;
 	for(int i = 0; i < BLOCK_WIDTH; i++)
 		if(has_sick[i])
 			spread = true;
@@ -252,23 +250,19 @@ int main(int argc, char** argv){
 	// Susciptible/Infected/Recovered/Deceased
 	int num_susceptible, num_recovered, num_deceased;
 
-	dim3 dimGrid(num_locs, 1, 1);
-	dim3 dimBlock(BLOCK_WIDTH, 1, 1);
-
 	int long seed = time(NULL);
 
 	if(DEBUG) std::cout << "Susceptible,Infected,Recovered,Deceased" << std::endl;
 	for(int hour = 0; num_infected > 0 && hour < SIMULATION_LENGTH; hour++) {
-		updateLocations(host_places, num_locs);
-		collectStatistics(host_places, num_locs, &num_susceptible, &num_infected, &num_recovered, &num_deceased);
-
 		cudaMemcpy(dev_places, host_places, num_locs * sizeof(struct Location), cudaMemcpyHostToDevice);
 
-		spreadDisease<<<dimGrid, dimBlock>>>(dev_places, disease, seed);
-		advanceInfection<<<dimGrid, dimBlock>>>(dev_places, disease, seed);
+		updateLocations<<<num_locs, 1>>>(dev_places);
+		spreadDisease<<<num_locs, BLOCK_WIDTH>>>(dev_places, disease, seed);
+		advanceInfection<<<num_locs, BLOCK_WIDTH>>>(dev_places, disease, seed);
 
 		cudaMemcpy(host_places, dev_places, num_locs * sizeof(struct Location), cudaMemcpyDeviceToHost);
 
+		collectStatistics(host_places, num_locs, &num_susceptible, &num_infected, &num_recovered, &num_deceased);
 		findNextLocations(host_places, num_locs);
 		if(DEBUG) std::cout << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
 	}

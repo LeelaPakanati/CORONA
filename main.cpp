@@ -42,7 +42,7 @@ void initialize(Location *places, int numPeople, int numPlaces) {
 }
 
 void updateLocations(Location *places, int num_places) {
-	Person temp_people[MAX_LOCATION_CAPACITY];
+	//Person temp_people[MAX_LOCATION_CAPACITY];
 	for (int loc_idx = 0; loc_idx < num_places; loc_idx++) {
 		//memcpy(temp_people, places[loc_idx].people, places[loc_idx].num_people * sizeof(Person));
 		memcpy(places[loc_idx].people, places[loc_idx].people_next_step, places[loc_idx].num_people_next_step * sizeof(Person));
