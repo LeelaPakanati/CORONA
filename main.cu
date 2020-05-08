@@ -79,6 +79,7 @@ __global__ void spreadDisease(Location* places, Disease disease, unsigned long r
 
 	__syncthreads();
 	
+	// Inneficient; use reduction?
 	bool spread = false;
 	for(int i = 0; i < BLOCK_WIDTH; i++)
 		if(has_sick[i])
@@ -152,7 +153,7 @@ __global__ void collectStatistics(Location *places, int* susceptible, int* infec
 	recovered[idx] = 0;
 	deceased[idx] = 0;
 	if(person_idx < places[loc_idx].num_people){
-		switch (places[loc_idx].people[person_idx].infection_status) {
+		switch (places[loc_idx].people[person_idx].infection_status) {	//massive control divergence
 			case SUSCEPTIBLE:
 				susceptible[idx] = 1;
 				break;
