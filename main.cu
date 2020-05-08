@@ -47,16 +47,18 @@ void initialize(Location *places, int numPeople, int numPlaces) {
 	}
 }
 
-__global__ void updateLocations(Location *places) {
+__device__ void updateLocations(Location *places) {
 	int loc_idx = blockIdx.x;
 	//memcpy(temp_people, places[loc_idx].people, places[loc_idx].num_people * sizeof(Person));
-	memcpy(places[loc_idx].people, places[loc_idx].people_next_step, places[loc_idx].num_people_next_step * sizeof(Person));
-	//memcpy(places[loc_idx].people_next_step, temp_people, places[loc_idx].num_people * sizeof(Person));
-	places[loc_idx].num_people = places[loc_idx].num_people_next_step;
-	places[loc_idx].num_people_next_step = 0;
+	if(threadIdx.x == 1){
+		memcpy(places[loc_idx].people, places[loc_idx].people_next_step, places[loc_idx].num_people_next_step * sizeof(Person));
+		//memcpy(places[loc_idx].people_next_step, temp_people, places[loc_idx].num_people * sizeof(Person));
+		places[loc_idx].num_people = places[loc_idx].num_people_next_step;
+		places[loc_idx].num_people_next_step = 0;
+	}
 }
 
-__global__ void spreadDisease(Location* places, Disease disease, unsigned long rand_seed) {
+__device__ void spreadDisease(Location* places, Disease disease, unsigned long rand_seed) {
 	int loc_idx = blockIdx.x;
 	int person_idx;
 
@@ -71,9 +73,7 @@ __global__ void spreadDisease(Location* places, Disease disease, unsigned long r
 		person_idx = i*blockDim.x + threadIdx.x;
 
 		if(person_idx < places[loc_idx].num_people){															// Minimal control divergence
-			if ((places[loc_idx].people[person_idx].infection_status == SICK) || (places[loc_idx].people[person_idx].infection_status == CARRIER)) {			// A lot of control divergence
-				has_sick[threadIdx.x] = true;
-			}
+			has_sick[threadIdx.x] =  ((places[loc_idx].people[person_idx].infection_status == SICK) || (places[loc_idx].people[person_idx].infection_status == CARRIER)); 
 		}
 	}
 
@@ -102,7 +102,7 @@ __global__ void spreadDisease(Location* places, Disease disease, unsigned long r
 	}
 }
 
-__global__ void advanceInfection(Location* places, Disease disease, unsigned long rand_seed){
+__device__ void advanceInfection(Location* places, Disease disease, unsigned long rand_seed){
 	int loc_idx = blockIdx.x;
 	int person_idx;
 
@@ -144,7 +144,7 @@ __global__ void advanceInfection(Location* places, Disease disease, unsigned lon
 	}
 }
 
-__global__ void collectStatistics(Location *places, int* susceptible, int* infected, int* recovered, int* deceased) {
+__device__ void collectStatistics(Location *places, int* susceptible, int* infected, int* recovered, int* deceased) {
 	int loc_idx = blockIdx.x;
 	int person_idx = threadIdx.x;
 	int idx = loc_idx * MAX_LOCATION_CAPACITY + person_idx;
@@ -173,6 +173,13 @@ __global__ void collectStatistics(Location *places, int* susceptible, int* infec
 				break;
 		}
 	}
+}
+
+__global__ void simulationKernel(Location *places, Disease disease, unsigned long rand_seed, int* susceptible, int* infected, int* recovered, int* deceased) {
+	updateLocations(places);
+	spreadDisease(places, disease, rand_seed);
+	advanceInfection(places, disease, rand_seed);
+	collectStatistics(places, susceptible, infected, recovered, deceased);
 }
 
 
@@ -261,11 +268,8 @@ int main(int argc, char** argv){
 	for(int hour = 0; num_infected > 0 && hour < SIMULATION_LENGTH; hour++) {
 		cudaMemcpy(dev_places, host_places, num_locs * sizeof(struct Location), cudaMemcpyHostToDevice);
 
-		updateLocations<<<num_locs, 1>>>(dev_places);
-		spreadDisease<<<num_locs, BLOCK_WIDTH>>>(dev_places, disease, seed);
-		advanceInfection<<<num_locs, BLOCK_WIDTH>>>(dev_places, disease, seed);
+		simulationKernel<<<num_locs, BLOCK_WIDTH>>>(dev_places, disease, seed, d_num_susceptible, d_num_infected, d_num_recovered, d_num_deceased);
 
-		collectStatistics<<<num_locs, BLOCK_WIDTH>>>(dev_places, d_num_susceptible, d_num_infected, d_num_recovered, d_num_deceased);
 		thrust::device_ptr<int> d_sus_ptr(d_num_susceptible);
 		thrust::device_ptr<int> d_inf_ptr(d_num_infected);
 		thrust::device_ptr<int> d_rec_ptr(d_num_recovered);
