@@ -66,8 +66,6 @@ __global__ void spreadDisease(Location* places, Disease disease, unsigned long r
 	//determine spread of infection from infected to healthy
 	__shared__ bool has_sick[BLOCK_WIDTH];
 	has_sick[threadIdx.x] = false;
-
-	__syncthreads();
 	
 	for(int i = 0; i < places[loc_idx].num_people/blockDim.x+1; i++){
 		person_idx = i*blockDim.x + threadIdx.x;
@@ -85,8 +83,6 @@ __global__ void spreadDisease(Location* places, Disease disease, unsigned long r
 	for(int i = 0; i < BLOCK_WIDTH; i++)
 		if(has_sick[i])
 			spread = true;
-
-	__syncthreads();
 
 	// Propogate infections in places with infected people
 	if(spread) {
@@ -115,7 +111,7 @@ __global__ void advanceInfection(Location* places, Disease disease, unsigned lon
 	for(int i = 0; i < places[loc_idx].num_people/blockDim.x+1; i++){
 		person_idx = i*blockDim.x + threadIdx.x;
 		if(person_idx < places[loc_idx].num_people){															// Minimal control divergence
-			switch (places[loc_idx].people[person_idx].infection_status) {
+			switch (places[loc_idx].people[person_idx].infection_status) {										// Massive control divergence
 				case CARRIER:
 					// TODO: Normal Distribution around average times
 					if (places[loc_idx].people[person_idx].state_count > (int) disease.AVERAGE_INCUBATION_DURATION) {
