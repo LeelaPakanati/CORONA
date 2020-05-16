@@ -12,6 +12,7 @@
 #include "./datatypes/location.cpp"
 #include "./datatypes/person.cpp"
 #include "./datatypes/disease.cpp"
+#include "./string_code.cpp"
 
 #define BLOCK_WIDTH 256
 // temporary
@@ -20,9 +21,6 @@
 // variables
 int SIMULATION_LENGTH = 365*24;
 bool DEBUG;
-
-// for convenience
-using json = nlohmann::json;
 
 void initialize(Location *places, int numPeople, int numPlaces) {
 
@@ -74,7 +72,7 @@ __global__ void spreadDisease(Location* places, Disease disease, curandState_t* 
 	person_idx = threadIdx.x;
 	Person* person_ptr = &loc_ptr->people[person_idx];
 
-	if(person_idx < loc_ptr->num_people){															// Minimal control divergence
+	if (person_idx < loc_ptr->num_people){															// Minimal control divergence
 		has_sick[threadIdx.x] =  ((person_ptr->infection_status == SICK) || (person_ptr->infection_status == CARRIER)); 
 	}
 	//}
@@ -84,16 +82,16 @@ __global__ void spreadDisease(Location* places, Disease disease, curandState_t* 
 	// Inneficient; use reduction?
 	bool spread = false;
 	for(int i = 0; i < BLOCK_WIDTH; i++)
-		if(has_sick[i])
+		if (has_sick[i])
 			spread = true;
 
 	// Propogate infections in places with infected people
-	if(spread) {
+	if (spread) {
 		//for(int i = 0; i < loc_ptr->num_people/blockDim.x+1; i++){
 		//	person_idx = i*blockDim.x + threadIdx.x;
 		Person* person_ptr = &loc_ptr->people[person_idx];
-		if(person_idx < loc_ptr->num_people){															// Minimal control divergence
-			if(person_ptr->infection_status == SUSCEPTIBLE){										// A lot of control divergence
+		if (person_idx < loc_ptr->num_people){															// Minimal control divergence
+			if (person_ptr->infection_status == SUSCEPTIBLE){										// A lot of control divergence
 				float infection_probability = disease.SPREAD_FACTOR * loc_ptr->interaction_level;
 				float r = curand_uniform(&states[blockIdx.x*blockDim.x+threadIdx.x]);
 				if (r < infection_probability) {													// A lot of control divergence
@@ -114,7 +112,7 @@ __global__ void advanceInfection(Location* places, Disease disease, curandState_
 	//	person_idx = i*blockDim.x + threadIdx.x;
 	person_idx = threadIdx.x;
 	Person* person_ptr = &loc_ptr->people[person_idx];
-	if(person_idx < loc_ptr->num_people){															// Minimal control divergence
+	if (person_idx < loc_ptr->num_people){															// Minimal control divergence
 		switch (person_ptr->infection_status) {										// Massive control divergence
 			case CARRIER:
 				// TODO: Normal Distribution around average times
@@ -157,7 +155,7 @@ __global__ void collectStatistics(Location *places, int* susceptible, int* infec
 	infected[idx] = 0;
 	recovered[idx] = 0;
 	deceased[idx] = 0;
-	if(person_idx < loc_ptr->num_people){
+	if (person_idx < loc_ptr->num_people){
 		switch (person_ptr->infection_status) {	//massive control divergence
 			case SUSCEPTIBLE:
 				susceptible[idx] = 1;
@@ -187,7 +185,7 @@ void findNextLocations(Location *places, int numPlaces) {
 		for (int person_idx = 0; person_idx < places[loc_idx].num_people; person_idx++) {
 			float r = (float) rand() / RAND_MAX;
 			new_loc_idx = rand() % numPlaces;
-			if(r < MOVEMENT_PROBABILITY && places[new_loc_idx].num_people_next_step < MAX_LOCATION_CAPACITY - 1) {
+			if (r < MOVEMENT_PROBABILITY && places[new_loc_idx].num_people_next_step < MAX_LOCATION_CAPACITY - 1) {
 				memcpy(&places[new_loc_idx].people_next_step[places[new_loc_idx].num_people_next_step++], &places[loc_idx].people[person_idx], sizeof(Person));
 			} else {
 				memcpy(&places[loc_idx].people_next_step[places[loc_idx].num_people_next_step++], &places[loc_idx].people[person_idx], sizeof(Person));
@@ -210,13 +208,57 @@ int main(int argc, char** argv){
 
 	// TODO: Add  more complex person/location config
 	std::ifstream input_file(input_file_name);
-	json input_json = json::parse(input_file);
+	std::string myText;
+	int pop_size = 0;
+	int num_locs = 0;
+	int max_size = 0;
+	int num_infected = 0;
+	Disease disease;
 
-	int pop_size = input_json.value("population_size", 0);
-	int num_locs = input_json.value("num_locations", 0);
-	int max_size = input_json.value("max_size", 0);
-	DEBUG = input_json.value("debug", 0);
-	
+	while (getline(input_file, myText)){
+		//std::cout << myText << std::endl;
+		std::string token = myText.substr(0, myText.find(":"));
+		std::string value = myText.substr(myText.find(":") + 1);
+		
+		switch (hash_it(token)) {
+			case e_debug:
+				DEBUG = atoi(value.c_str());
+				break;
+			case e_population_size:
+				pop_size = atoi(value.c_str());
+				break;
+			case e_num_locations:
+				num_locs = atoi(value.c_str());
+				break;
+			case e_max_size:
+				max_size = atoi(value.c_str());
+				break;
+			case e_initial_infected:
+				num_infected = atoi(value.c_str());
+				break;
+			case e_SPREAD_FACTOR:
+				disease.SPREAD_FACTOR = atof(value.c_str());
+				break;
+			case e_CARRIER_PROBABILITY:
+				disease.CARRIER_PROBABILITY = atof(value.c_str());
+				break;
+			case e_AVERAGE_INCUBATION_DURATION:
+				disease.AVERAGE_INCUBATION_DURATION = atof(value.c_str());
+				break;
+			case e_AVERAGE_TIME_DEATH:
+				disease.AVERAGE_TIME_DEATH = atof(value.c_str());
+				break;
+			case e_AVERAGE_TIME_RECOVERY:
+				disease.AVERAGE_TIME_RECOVERY = atof(value.c_str());
+				break;
+			case e_DEATH_RATE:
+				disease.DEATH_RATE = atof(value.c_str());
+				break;
+			default:
+				std::cout << "Invalid sample file entry: " << token << std::endl;
+		}
+	}
+
 	// Setup Cuda Rand
 	curandState_t* states;
 	cudaMalloc((void**) &states, num_locs * BLOCK_WIDTH * sizeof(curandState_t));
@@ -224,23 +266,12 @@ int main(int argc, char** argv){
 	init<<<num_locs, BLOCK_WIDTH>>>(time(NULL), states);
 
 	// All other references to these objects should be pointers or arrays of pointers
-	Location *host_places = (Location*) malloc(num_locs * sizeof(Location));
+	Location* host_places = (Location*) malloc(num_locs * sizeof(Location));
 	Location* dev_places;
 	cudaMalloc((void **) &dev_places, num_locs * sizeof(struct Location));
 
 	initialize(host_places, pop_size, num_locs);
 
-	// Configure disease based on input argument
-	json disease_json = input_json.value("disease", input_json);
-	Disease disease;
-	disease.SPREAD_FACTOR = disease_json.value("SPREAD_FACTOR", 0.0);
-	disease.CARRIER_PROBABILITY = disease_json.value("CARRIER_PROBABILITY", 0.0);
-	disease.AVERAGE_INCUBATION_DURATION = disease_json.value("AVERAGE_INCUBATION_DURATION", 0.0);
-	disease.AVERAGE_TIME_DEATH = disease_json.value("AVERAGE_TIME_DEATH", 0.0);
-	disease.AVERAGE_TIME_RECOVERY = disease_json.value("AVERAGE_TIME_RECOVERY", 0.0);
-	disease.DEATH_RATE = disease_json.value("DEATH_RATE", 0.0);
-
-	int num_infected = input_json.value("initial_infected", 0);
 	int person_to_infect;
 	int location_to_infect;
 
@@ -253,7 +284,7 @@ int main(int argc, char** argv){
 			person_to_infect = rand() % host_places[location_to_infect].num_people_next_step;
 		} while(host_places[location_to_infect].people_next_step[person_to_infect].infection_status != SUSCEPTIBLE);
 		host_places[location_to_infect].people_next_step[person_to_infect].infection_status = CARRIER;
-		if(DEBUG) {
+		if (DEBUG) {
 			std::clog << location_to_infect << " has an infected person" << std::endl;
 		}
 	}
@@ -267,6 +298,8 @@ int main(int argc, char** argv){
 	cudaMalloc((void**) &d_num_deceased, num_locs*MAX_LOCATION_CAPACITY*sizeof(int));
 
 	if(DEBUG) std::cout << "Susceptible,Infected,Recovered,Deceased" << std::endl;
+
+	if (DEBUG) std::cout << "Susceptible,Infected,Recovered,Deceased" << std::endl;
 	for(int hour = 0; num_infected > 0 && hour < SIMULATION_LENGTH; hour++) {
 		cudaMemcpy(dev_places, host_places, num_locs * sizeof(struct Location), cudaMemcpyHostToDevice);
 
@@ -290,7 +323,7 @@ int main(int argc, char** argv){
 		cudaMemcpy(host_places, dev_places, num_locs * sizeof(struct Location), cudaMemcpyDeviceToHost);
 
 		findNextLocations(host_places, num_locs);
-		if(DEBUG) std::cout << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
+		if (DEBUG) std::cout << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
 	}
 
 	free(host_places);
