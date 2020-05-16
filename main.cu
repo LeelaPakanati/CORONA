@@ -2,12 +2,12 @@
 #include <fstream>
 #include <string>
 #include <ctime>
-#include <nlohmann/json.hpp>
 #include <curand.h>
 #include <curand_kernel.h>
 #include <thrust/device_ptr.h>
 #include <thrust/functional.h>
 #include <thrust/reduce.h>
+#include <cstring>
 
 #include "./datatypes/location.cpp"
 #include "./datatypes/person.cpp"

@@ -2,7 +2,7 @@
 #include <fstream>
 #include <string>
 #include <ctime>
-#include <nlohmann/json.hpp>
+#include <cstring>
 
 #include "./datatypes/location.cpp"
 #include "./datatypes/person.cpp"
@@ -15,9 +15,6 @@
 // variables
 int SIMULATION_LENGTH = 365*24;
 bool DEBUG;
-
-// for convenience
-using json = nlohmann::json;
 
 void initialize(Location *places, int numPeople, int numPlaces) {
 
