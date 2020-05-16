@@ -7,6 +7,7 @@
 #include "./datatypes/location.cpp"
 #include "./datatypes/person.cpp"
 #include "./datatypes/disease.cpp"
+#include "./string_code.cpp"
 
 // temporary
 #define MOVEMENT_PROBABILITY .1
@@ -52,7 +53,7 @@ void updateLocations(Location *places, int num_places) {
 	}
 }
 
-void spreadDisease(Location *places, int num_places, Disease* disease) {
+void spreadDisease(Location *places, int num_places, Disease disease) {
 	for (int loc_idx = 0; loc_idx < num_places; loc_idx++) {
 
 		//determine spread of infection from infected to healthy
@@ -70,7 +71,7 @@ void spreadDisease(Location *places, int num_places, Disease* disease) {
 			for (int person_idx = 0; person_idx < places[loc_idx].num_people; person_idx++) {
 				if (places[loc_idx].people[person_idx].infection_status == SUSCEPTIBLE) {
 					// TODO: scale infection probability properly
-					float infection_probability = disease->SPREAD_FACTOR * places[loc_idx].interaction_level;
+					float infection_probability = disease.SPREAD_FACTOR * places[loc_idx].interaction_level;
 					float r = (float) rand() / RAND_MAX;
 					if (r < infection_probability) {
 						places[loc_idx].people[person_idx].infection_status = CARRIER;
@@ -96,7 +97,7 @@ void findNextLocations(Location *places, int numPlaces) {
 	}
 }
 
-void collectStatistics(Location *places, int numPlaces, Disease* disease, int* susceptible, int* infected, int* recovered, int* deceased) {
+void collectStatistics(Location *places, int numPlaces, Disease disease, int* susceptible, int* infected, int* recovered, int* deceased) {
 	(*susceptible) = 0;
 	(*infected) = 0;
 	(*recovered) = 0;
@@ -113,13 +114,13 @@ void collectStatistics(Location *places, int numPlaces, Disease* disease, int* s
 					(*infected)++;
 
 					// TODO: Normal Distribution around average times
-					if (places[loc_idx].people[person_idx].state_count > (int) disease->AVERAGE_INCUBATION_DURATION) {
+					if (places[loc_idx].people[person_idx].state_count > (int) disease.AVERAGE_INCUBATION_DURATION) {
 						places[loc_idx].people[person_idx].infection_status = SICK;
 						places[loc_idx].people[person_idx].state_count = 0;
 
 						// TODO: death rate based on age
 						float r = (float) rand() / RAND_MAX;
-						if (r < disease->DEATH_RATE)
+						if (r < disease.DEATH_RATE)
 							places[loc_idx].people[person_idx].to_die = true;
 						else
 							places[loc_idx].people[person_idx].to_die = false;
@@ -131,10 +132,10 @@ void collectStatistics(Location *places, int numPlaces, Disease* disease, int* s
 					(*infected)++;
 
 					if (places[loc_idx].people[person_idx].to_die) {
-						if (places[loc_idx].people[person_idx].state_count > disease->AVERAGE_TIME_DEATH)
+						if (places[loc_idx].people[person_idx].state_count > disease.AVERAGE_TIME_DEATH)
 							places[loc_idx].people[person_idx].infection_status = DECEASED;
 					} else {
-						if (places[loc_idx].people[person_idx].state_count > disease->AVERAGE_TIME_RECOVERY)
+						if (places[loc_idx].people[person_idx].state_count > disease.AVERAGE_TIME_RECOVERY)
 							places[loc_idx].people[person_idx].infection_status = RECOVERED;
 					}
 					places[loc_idx].people[person_idx].state_count++;
@@ -166,30 +167,64 @@ int main(int argc, char** argv){
 
 	// TODO: Add  more complex person/location config
 	std::ifstream input_file(input_file_name);
-	json input_json = json::parse(input_file);
-	
-	int pop_size = input_json.value("population_size", 0);
-	int num_locs = input_json.value("num_locations", 0);
-	DEBUG = input_json.value("debug", 0);
-
 	srand(time(NULL));
+
+	std::string myText;
+	int pop_size = 0;
+	int num_locs = 0;
+	int max_size = 0;
+	int num_infected = 0;
+	Disease disease;
+
+	while (getline(input_file, myText)){
+		//std::cout << myText << std::endl;
+		std::string token = myText.substr(0, myText.find(":"));
+		std::string value = myText.substr(myText.find(":") + 1);
+		
+		switch (hash_it(token)) {
+			case e_debug:
+				DEBUG = atoi(value.c_str());
+				break;
+			case e_population_size:
+				pop_size = atoi(value.c_str());
+				break;
+			case e_num_locations:
+				num_locs = atoi(value.c_str());
+				break;
+			case e_max_size:
+				max_size = atoi(value.c_str());
+				break;
+			case e_initial_infected:
+				num_infected = atoi(value.c_str());
+				break;
+			case e_SPREAD_FACTOR:
+				disease.SPREAD_FACTOR = atof(value.c_str());
+				break;
+			case e_CARRIER_PROBABILITY:
+				disease.CARRIER_PROBABILITY = atof(value.c_str());
+				break;
+			case e_AVERAGE_INCUBATION_DURATION:
+				disease.AVERAGE_INCUBATION_DURATION = atof(value.c_str());
+				break;
+			case e_AVERAGE_TIME_DEATH:
+				disease.AVERAGE_TIME_DEATH = atof(value.c_str());
+				break;
+			case e_AVERAGE_TIME_RECOVERY:
+				disease.AVERAGE_TIME_RECOVERY = atof(value.c_str());
+				break;
+			case e_DEATH_RATE:
+				disease.DEATH_RATE = atof(value.c_str());
+				break;
+			default:
+				std::cout << "Invalid sample file entry: " << token << std::endl;
+		}
+	}
 	
 	// All other references to these objects should be pointers or arrays of pointers
 	Location *places = (Location*) malloc(num_locs * sizeof(Location));
 
 	initialize(places, pop_size, num_locs);
 	
-	// Configure disease based on input argument
-	json disease_json = input_json.value("disease", input_json);
-	Disease *disease = (Disease*) malloc(sizeof(disease));
-	disease->SPREAD_FACTOR = disease_json.value("SPREAD_FACTOR", 0.0);
-	disease->CARRIER_PROBABILITY = disease_json.value("CARRIER_PROBABILITY", 0.0);
-	disease->AVERAGE_INCUBATION_DURATION = disease_json.value("AVERAGE_INCUBATION_DURATION", 0.0);
-	disease->AVERAGE_TIME_DEATH = disease_json.value("AVERAGE_TIME_DEATH", 0.0);
-	disease->AVERAGE_TIME_RECOVERY = disease_json.value("AVERAGE_TIME_RECOVERY", 0.0);
-	disease->DEATH_RATE = disease_json.value("DEATH_RATE", 0.0);
-
-	int num_infected = input_json.value("initial_infected", 0);
 	int person_to_infect;
 	int location_to_infect;
 
@@ -220,5 +255,4 @@ int main(int argc, char** argv){
 	}
 
 	free(places);
-	free(disease);
 }
