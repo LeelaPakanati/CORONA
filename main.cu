@@ -104,7 +104,7 @@ __global__ void spreadDisease(Location* places, Disease disease, unsigned long r
 	}
 }
 
-__device__ void advanceInfection(Location* places, Disease disease, unsigned long rand_seed){
+__global__ void advanceInfection(Location* places, Disease disease, unsigned long rand_seed){
 	int loc_idx = blockIdx.x;
 	Location* loc_ptr = &places[loc_idx];
 	int person_idx;
@@ -149,7 +149,7 @@ __device__ void advanceInfection(Location* places, Disease disease, unsigned lon
 }
 }
 
-__device__ void collectStatistics(Location *places, int* susceptible, int* infected, int* recovered, int* deceased) {
+__global__ void collectStatistics(Location *places, int* susceptible, int* infected, int* recovered, int* deceased) {
 	int loc_idx = blockIdx.x;
 	Location* loc_ptr = &places[loc_idx];
 	int person_idx = threadIdx.x;
@@ -182,13 +182,12 @@ __device__ void collectStatistics(Location *places, int* susceptible, int* infec
 	}
 }
 
-__global__ void simulationKernel(Location *places, Disease disease, unsigned long rand_seed, int* susceptible, int* infected, int* recovered, int* deceased) {
-	updateLocations(places);
-	spreadDisease(places, disease, rand_seed);
-	advanceInfection(places, disease, rand_seed);
-	collectStatistics(places, susceptible, infected, recovered, deceased);
-}
-
+//__global__ void simulationKernel(Location *places, Disease disease, unsigned long rand_seed, int* susceptible, int* infected, int* recovered, int* deceased) {
+//	updateLocations(places);
+//	spreadDisease(places, disease, rand_seed);
+//	advanceInfection(places, disease, rand_seed);
+//	collectStatistics(places, susceptible, infected, recovered, deceased);
+//}
 
 void findNextLocations(Location *places, int numPlaces) {
 	int new_loc_idx;
@@ -309,7 +308,11 @@ int main(int argc, char** argv){
 	for(int hour = 0; num_infected > 0 && hour < SIMULATION_LENGTH; hour++) {
 		cudaMemcpy(dev_places, host_places, num_locs * sizeof(struct Location), cudaMemcpyHostToDevice);
 
-		simulationKernel<<<num_locs, BLOCK_WIDTH>>>(dev_places, disease, seed, d_num_susceptible, d_num_infected, d_num_recovered, d_num_deceased);
+		updateLocations<<<num_locs, 1>>>(dev_places);
+		spreadDisease<<<num_locs, BLOCK_WIDTH>>>(dev_places, disease, seed);
+		advanceInfection<<<num_locs, BLOCK_WIDTH>>>(dev_places, disease, seed);
+		collectStatistics<<<num_locs, BLOCK_WIDTH>>>(dev_places, d_num_susceptible, d_num_infected, d_num_recovered, d_num_deceased);
+		//simulationKernel<<<num_locs, BLOCK_WIDTH>>>(dev_places, disease, seed, d_num_susceptible, d_num_infected, d_num_recovered, d_num_deceased);
 
 		thrust::device_ptr<int> d_sus_ptr(d_num_susceptible);
 		thrust::device_ptr<int> d_inf_ptr(d_num_infected);
