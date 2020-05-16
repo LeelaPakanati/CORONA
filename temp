@@ -1,0 +1,21 @@
+
+	__shared__ int num_sick;
+	if (threadIdx.x == 0){
+		num_sick = 0;
+	}
+
+	//for(int i = 0; i < loc_ptr->num_people/blockDim.x+1; i++){
+	//	person_idx = i*blockDim.x + threadIdx.x;
+	person_idx = threadIdx.x;
+	Person* person_ptr = &loc_ptr->people[person_idx];
+
+	if (person_idx < loc_ptr->num_people){															// Minimal control divergence
+		//if ((person_ptr->infection_status == SICK) || (person_ptr->infection_status == CARRIER))
+		//	atomicAdd(&num_sick, 1);
+	}
+	//}
+
+	__syncthreads();
+
+	// Propogate infections in places with infected people
+	if (num_sick > 0) {

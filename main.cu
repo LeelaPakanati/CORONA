@@ -45,19 +45,19 @@ void initialize(Location *places, int numPeople, int numPlaces) {
 	}
 }
 
-__device__ void updateLocations(Location *places) {
+__global__ void updateLocations(Location *places) {
 	int loc_idx = blockIdx.x;
 	Location* loc_ptr = &places[loc_idx];
 	//memcpy(temp_people, places[loc_idx].people, places[loc_idx].num_people * sizeof(Person));
-	if (threadIdx.x == 1){
-		memcpy(loc_ptr->people, loc_ptr->people_next_step, loc_ptr->num_people_next_step * sizeof(Person));
-		//memcpy(places[loc_idx].people_next_step, temp_people, places[loc_idx].num_people * sizeof(Person));
-		loc_ptr->num_people = loc_ptr->num_people_next_step;
-		loc_ptr->num_people_next_step = 0;
-	}
+	//if (threadIdx.x == 0){
+	memcpy(loc_ptr->people, loc_ptr->people_next_step, loc_ptr->num_people_next_step * sizeof(Person));
+	//memcpy(places[loc_idx].people_next_step, temp_people, places[loc_idx].num_people * sizeof(Person));
+	loc_ptr->num_people = loc_ptr->num_people_next_step;
+	loc_ptr->num_people_next_step = 0;
+	//}
 }
 
-__device__ void spreadDisease(Location* places, Disease disease, unsigned long rand_seed) {
+__global__ void spreadDisease(Location* places, Disease disease, unsigned long rand_seed) {
 	int loc_idx = blockIdx.x;
 	Location* loc_ptr = &places[loc_idx];
 	int person_idx;
@@ -66,8 +66,8 @@ __device__ void spreadDisease(Location* places, Disease disease, unsigned long r
 	curand_init(rand_seed, blockIdx.x*blockDim.x+threadIdx.x, 0, &state); 
 
 	//determine spread of infection from infected to healthy
-	__shared__ bool has_sick[BLOCK_WIDTH];
-	has_sick[threadIdx.x] = false;
+	__shared__ int has_sick[BLOCK_WIDTH];
+	has_sick[threadIdx.x] = 0;
 
 	//for(int i = 0; i < loc_ptr->num_people/blockDim.x+1; i++){
 	//	person_idx = i*blockDim.x + threadIdx.x;
@@ -81,14 +81,13 @@ __device__ void spreadDisease(Location* places, Disease disease, unsigned long r
 
 	__syncthreads();
 
-	// Inneficient; use reduction?
-	bool spread = false;
-	for(int i = 0; i < BLOCK_WIDTH; i++)
-		if (has_sick[i])
-			spread = true;
+	//using reduction to add number of sick people
+	for (unsigned int stride = blockDim.x/2; stride > 0; stride /= 2)
+		if (threadIdx.x < stride)
+			has_sick[threadIdx.x] += has_sick[threadIdx.x+stride];
 
 	// Propogate infections in places with infected people
-	if (spread) {
+	if (has_sick[0] > 0) {
 		//for(int i = 0; i < loc_ptr->num_people/blockDim.x+1; i++){
 		//	person_idx = i*blockDim.x + threadIdx.x;
 		Person* person_ptr = &loc_ptr->people[person_idx];
