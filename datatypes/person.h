@@ -7,8 +7,6 @@
 struct Location;
 
 struct Person {
-	Location* home;
-	Location* work;
 	int id;
 	INFECTION_STATUS infection_status;
 	int state_count;
