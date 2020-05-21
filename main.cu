@@ -266,8 +266,9 @@ int main(int argc, char** argv){
 	init<<<num_locs, BLOCK_WIDTH>>>(time(NULL), states);
 
 	// All other references to these objects should be pointers or arrays of pointers
-	Location* host_places = (Location*) malloc(num_locs * sizeof(Location));
+	Location* host_places; //= (Location*) malloc(num_locs * sizeof(Location));
 	Location* dev_places;
+	cudaHostAlloc((void **) &host_places, num_locs * sizeof(struct Location), cudaHostAllocDefault);
 	cudaMalloc((void **) &dev_places, num_locs * sizeof(struct Location));
 
 	initialize(host_places, pop_size, num_locs);
@@ -326,6 +327,7 @@ int main(int argc, char** argv){
 		if (DEBUG) std::cout << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
 	}
 
-	free(host_places);
+	//free(host_places);
+	cudaFreeHost(host_places);
 	cudaFree(dev_places);
 }
