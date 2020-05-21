@@ -45,6 +45,11 @@ void initialize(Location *places, int numPeople, int numPlaces) {
 	}
 }
 
+__global__ void init(unsigned int seed, curandState_t* states){
+	unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+	curand_init(seed, idx, 0, &states[idx]); 
+}
+
 __global__ void updateLocations(Location *places) {
 	int loc_idx = blockIdx.x;
 	Location* loc_ptr = &places[loc_idx];
@@ -57,13 +62,10 @@ __global__ void updateLocations(Location *places) {
 	//}
 }
 
-__global__ void spreadDisease(Location* places, Disease disease, unsigned long rand_seed) {
+__global__ void spreadDisease(Location* places, Disease disease, curandState_t* states) {
 	int loc_idx = blockIdx.x;
 	Location* loc_ptr = &places[loc_idx];
 	int person_idx;
-
-	curandState_t state;
-	curand_init(rand_seed, blockIdx.x*blockDim.x+threadIdx.x, 0, &state); 
 
 	//determine spread of infection from infected to healthy
 	__shared__ int has_sick[BLOCK_WIDTH];
@@ -94,7 +96,7 @@ __global__ void spreadDisease(Location* places, Disease disease, unsigned long r
 		if (person_idx < loc_ptr->num_people){															// Minimal control divergence
 			if (person_ptr->infection_status == SUSCEPTIBLE){										// A lot of control divergence
 				float infection_probability = disease.SPREAD_FACTOR * loc_ptr->interaction_level;
-				float r = curand_uniform(&state);
+				float r = curand_uniform(&states[blockIdx.x*blockDim.x+threadIdx.x]);
 				if (r < infection_probability) {													// A lot of control divergence
 					person_ptr->infection_status = CARRIER;
 				}
@@ -104,13 +106,10 @@ __global__ void spreadDisease(Location* places, Disease disease, unsigned long r
 	}
 }
 
-__global__ void advanceInfection(Location* places, Disease disease, unsigned long rand_seed){
+__global__ void advanceInfection(Location* places, Disease disease, curandState_t* states){
 	int loc_idx = blockIdx.x;
 	Location* loc_ptr = &places[loc_idx];
 	int person_idx;
-
-	curandState_t state;
-	curand_init(rand_seed, blockIdx.x*blockDim.x+threadIdx.x, 0, &state); 
 
 	//for(int i = 0; i < loc_ptr->num_people/blockDim.x+1; i++){
 	//	person_idx = i*blockDim.x + threadIdx.x;
@@ -125,7 +124,7 @@ __global__ void advanceInfection(Location* places, Disease disease, unsigned lon
 					person_ptr->state_count = 0;
 
 					// TODO: death rate based on age
-					float r = curand_uniform(&state);
+					float r = curand_uniform(&states[blockIdx.x*blockDim.x+threadIdx.x]);
 					person_ptr->to_die = (r < disease.DEATH_RATE);
 				} else {
 					person_ptr->state_count++;
@@ -225,7 +224,6 @@ int main(int argc, char** argv){
 	int num_infected = 0;
 	Disease disease;
 
-
 	while (getline(input_file, myText)){
 		//std::cout << myText << std::endl;
 		std::string token = myText.substr(0, myText.find(":"));
@@ -270,6 +268,12 @@ int main(int argc, char** argv){
 		}
 	}
 
+	// Setup Cuda Rand
+	curandState_t* states;
+	cudaMalloc((void**) &states, num_locs * BLOCK_WIDTH * sizeof(curandState_t));
+
+	init<<<num_locs, BLOCK_WIDTH>>>(time(NULL), states);
+
 	// All other references to these objects should be pointers or arrays of pointers
 	Location* host_places = (Location*) malloc(num_locs * sizeof(Location));
 	Location* dev_places;
@@ -302,15 +306,13 @@ int main(int argc, char** argv){
 	cudaMalloc((void**) &d_num_recovered, num_locs*MAX_LOCATION_CAPACITY*sizeof(int));
 	cudaMalloc((void**) &d_num_deceased, num_locs*MAX_LOCATION_CAPACITY*sizeof(int));
 
-	int long seed = time(NULL);
-
 	if (DEBUG) std::cout << "Susceptible,Infected,Recovered,Deceased" << std::endl;
 	for(int hour = 0; num_infected > 0 && hour < SIMULATION_LENGTH; hour++) {
 		cudaMemcpy(dev_places, host_places, num_locs * sizeof(struct Location), cudaMemcpyHostToDevice);
 
 		updateLocations<<<num_locs, 1>>>(dev_places);
-		spreadDisease<<<num_locs, BLOCK_WIDTH>>>(dev_places, disease, seed);
-		advanceInfection<<<num_locs, BLOCK_WIDTH>>>(dev_places, disease, seed);
+		spreadDisease<<<num_locs, BLOCK_WIDTH>>>(dev_places, disease, states);
+		advanceInfection<<<num_locs, BLOCK_WIDTH>>>(dev_places, disease, states);
 		collectStatistics<<<num_locs, BLOCK_WIDTH>>>(dev_places, d_num_susceptible, d_num_infected, d_num_recovered, d_num_deceased);
 		//simulationKernel<<<num_locs, BLOCK_WIDTH>>>(dev_places, disease, seed, d_num_susceptible, d_num_infected, d_num_recovered, d_num_deceased);
 
