@@ -305,7 +305,7 @@ int main(int argc, char** argv){
 	cudaMalloc((void**) &d_num_recovered, num_locs*MAX_LOCATION_CAPACITY*sizeof(int));
 	cudaMalloc((void**) &d_num_deceased, num_locs*MAX_LOCATION_CAPACITY*sizeof(int));
 
-	if (DEBUG) std::cout << "Susceptible,Infected,Recovered,Deceased" << std::endl;
+	if (DEBUG) std::cout << "Total:Susceptible,Infected,Recovered,Deceased" << std::endl;
 	cudaMemcpy(dev_places, host_places, num_locs * sizeof(struct Location), cudaMemcpyHostToDevice);
 	for(int hour = 0; num_infected > 0 && hour < SIMULATION_LENGTH; hour++) {
 
@@ -328,7 +328,7 @@ int main(int argc, char** argv){
 		//cudaMemcpy(host_places, dev_places, num_locs * sizeof(struct Location), cudaMemcpyDeviceToHost);
 
 		findNextLocations<<<num_locs, BLOCK_WIDTH>>>(dev_places, num_locs, states);
-		if (DEBUG) std::cout << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
+		if (DEBUG) std::cout << num_susceptible+num_infected+num_recovered+num_deceased << ":" << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
 	}
 
 	//free(host_places);
