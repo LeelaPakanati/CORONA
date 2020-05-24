@@ -191,9 +191,9 @@ __global__ void findNextLocations(Location *places, int numPlaces, curandState_t
 	Person* person_ptr = &loc_ptr->people[person_idx];
 
 	if (person_idx < loc_ptr->num_people){
-		float r = curand_uniform(&states[0]);
-		int new_loc_idx = (int) (curand_uniform(&states[0]) * numPlaces);
-		if (r > MOVEMENT_PROBABILITY || loc_ptr->num_people_next_step >= MAX_LOCATION_CAPACITY - 1) {
+		float r = curand_uniform(&states[blockIdx.x*blockDim.x+threadIdx.x]);
+		int new_loc_idx = (int) (curand_uniform(&states[blockIdx.x*blockDim.x+threadIdx.x]) * numPlaces);
+		if (r > MOVEMENT_PROBABILITY || places[new_loc_idx].num_people_next_step >= MAX_LOCATION_CAPACITY - 1) {
 			new_loc_idx = loc_idx;
 		}
 		int person_new_idx = atomicAdd(&places[new_loc_idx].num_people_next_step, 1);
