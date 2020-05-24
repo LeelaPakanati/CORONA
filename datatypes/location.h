@@ -9,9 +9,9 @@ struct Person;
 
 struct Location {
 	Person people[MAX_LOCATION_CAPACITY];
-	int num_people;
+	uint num_people;
 	Person people_next_step[MAX_LOCATION_CAPACITY];
-	int num_people_next_step;
+	uint num_people_next_step;
 	float interaction_level;
 };
 

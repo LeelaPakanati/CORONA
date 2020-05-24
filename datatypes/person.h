@@ -7,9 +7,9 @@
 struct Location;
 
 struct Person {
-	int id;
+	uint id;
 	INFECTION_STATUS infection_status;
-	int state_count;
+	uint state_count;
 	bool to_die;
 };
 
