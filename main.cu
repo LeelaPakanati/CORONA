@@ -190,15 +190,38 @@ __global__ void findNextLocations(Location *places, int numPlaces, curandState_t
 	int person_idx = threadIdx.x;
 	Person* person_ptr = &loc_ptr->people[person_idx];
 
+	__shared__ Person local_people_next_step[256];
+	__shared__ int local_num_people_next_step;
+	if(threadIdx.x == 0){
+		local_num_people_next_step = 0;
+	}
+	__syncthreads();
+
 	if (person_idx < loc_ptr->num_people){
 		float r = curand_uniform(&states[blockIdx.x*blockDim.x+threadIdx.x]);
 		int new_loc_idx = (int) (curand_uniform(&states[blockIdx.x*blockDim.x+threadIdx.x]) * numPlaces);
-		if (r > MOVEMENT_PROBABILITY || places[new_loc_idx].num_people_next_step >= MAX_LOCATION_CAPACITY - 1) {
-			new_loc_idx = loc_idx;
+		if ((r < MOVEMENT_PROBABILITY && places[new_loc_idx].num_people_next_step < MAX_LOCATION_CAPACITY - 1)
+			|| (local_num_people_next_step + places[new_loc_idx].num_people_next_step > MAX_LOCATION_CAPACITY) ){
+
+			int person_new_idx = atomicAdd(&places[new_loc_idx].num_people_next_step, 1);
+			memcpy(&places[new_loc_idx].people_next_step[person_new_idx], person_ptr, sizeof(Person));
+		} else {
+			int person_new_idx = atomicAdd(&local_num_people_next_step, 1);
+			memcpy(&local_people_next_step[person_new_idx], person_ptr, sizeof(Person));
 		}
-		int person_new_idx = atomicAdd(&places[new_loc_idx].num_people_next_step, 1);
-		memcpy(&places[new_loc_idx].people_next_step[person_new_idx], person_ptr, sizeof(Person));
 	}
+
+	__syncthreads();
+
+	if(threadIdx.x < local_num_people_next_step){
+		memcpy(&places[loc_idx].people_next_step[places[loc_idx].num_people_next_step + threadIdx.x], &local_people_next_step[threadIdx.x], sizeof(Person));	
+	}
+
+	__syncthreads();
+
+	if(threadIdx.x == 0)
+		places[loc_idx].num_people_next_step += local_num_people_next_step;
+
 }
 
 int main(int argc, char** argv){
@@ -305,7 +328,7 @@ int main(int argc, char** argv){
 	cudaMalloc((void**) &d_num_recovered, num_locs*MAX_LOCATION_CAPACITY*sizeof(int));
 	cudaMalloc((void**) &d_num_deceased, num_locs*MAX_LOCATION_CAPACITY*sizeof(int));
 
-	if (DEBUG) std::cout << "Total:Susceptible,Infected,Recovered,Deceased" << std::endl;
+	if (DEBUG) std::cout << "Susceptible,Infected,Recovered,Deceased" << std::endl;
 	cudaMemcpy(dev_places, host_places, num_locs * sizeof(struct Location), cudaMemcpyHostToDevice);
 	for(int hour = 0; num_infected > 0 && hour < SIMULATION_LENGTH; hour++) {
 
@@ -328,7 +351,7 @@ int main(int argc, char** argv){
 		//cudaMemcpy(host_places, dev_places, num_locs * sizeof(struct Location), cudaMemcpyDeviceToHost);
 
 		findNextLocations<<<num_locs, BLOCK_WIDTH>>>(dev_places, num_locs, states);
-		if (DEBUG) std::cout << num_susceptible+num_infected+num_recovered+num_deceased << ":" << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
+		if (DEBUG) std::cout << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
 	}
 
 	//free(host_places);
