@@ -218,6 +218,7 @@ int main(int argc, char** argv){
 	std::string myText;
 	int pop_size = 0;
 	int num_locs = 0;
+	int max_size = 0;
 	int num_infected = 0;
 	Disease disease;
 
