@@ -179,12 +179,12 @@ __global__ void collectStatistics(Location *places, int* susceptible, int* infec
 }
 
 
-void findNextLocations(Location *places, int numPlaces) {
+__global__ void findNextLocations(Location *places, int numPlaces, curandState_t* states) {
 	int new_loc_idx;
 	for (int loc_idx = 0; loc_idx < numPlaces; loc_idx++) {
 		for (int person_idx = 0; person_idx < places[loc_idx].num_people; person_idx++) {
-			float r = (float) rand() / RAND_MAX;
-			new_loc_idx = rand() % numPlaces;
+			float r = curand_uniform(&states[0]);
+			new_loc_idx = (int) (curand_uniform(&states[0]) * numPlaces);
 			if (r < MOVEMENT_PROBABILITY && places[new_loc_idx].num_people_next_step < MAX_LOCATION_CAPACITY - 1) {
 				memcpy(&places[new_loc_idx].people_next_step[places[new_loc_idx].num_people_next_step++], &places[loc_idx].people[person_idx], sizeof(Person));
 			} else {
@@ -301,8 +301,8 @@ int main(int argc, char** argv){
 	if(DEBUG) std::cout << "Susceptible,Infected,Recovered,Deceased" << std::endl;
 
 	if (DEBUG) std::cout << "Susceptible,Infected,Recovered,Deceased" << std::endl;
+	cudaMemcpy(dev_places, host_places, num_locs * sizeof(struct Location), cudaMemcpyHostToDevice);
 	for(int hour = 0; num_infected > 0 && hour < SIMULATION_LENGTH; hour++) {
-		cudaMemcpy(dev_places, host_places, num_locs * sizeof(struct Location), cudaMemcpyHostToDevice);
 
 		updateLocations<<<num_locs, 1>>>(dev_places);
 
@@ -321,9 +321,9 @@ int main(int argc, char** argv){
 		num_recovered = thrust::reduce(d_rec_ptr, d_rec_ptr + num_locs*MAX_LOCATION_CAPACITY);
 		num_deceased = thrust::reduce(d_dec_ptr, d_dec_ptr + num_locs*MAX_LOCATION_CAPACITY);
 
-		cudaMemcpy(host_places, dev_places, num_locs * sizeof(struct Location), cudaMemcpyDeviceToHost);
+		//cudaMemcpy(host_places, dev_places, num_locs * sizeof(struct Location), cudaMemcpyDeviceToHost);
 
-		findNextLocations(host_places, num_locs);
+		findNextLocations<<<1, 1>>>(dev_places, num_locs, states);
 		if (DEBUG) std::cout << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
 	}
 
