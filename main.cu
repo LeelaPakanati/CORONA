@@ -184,7 +184,7 @@ __global__ void collectStatistics(Location *places, int* susceptible, int* infec
 //	collectStatistics(places, susceptible, infected, recovered, deceased);
 //}
 
-__global__ void findNextLocations(Location *places, int numPlaces, curandState_t* states) {
+void findNextLocations(Location *places, int numPlaces, curandState_t* states) {
 	int new_loc_idx;
 	for (int loc_idx = 0; loc_idx < numPlaces; loc_idx++) {
 		for (int person_idx = 0; person_idx < places[loc_idx].num_people; person_idx++) {
@@ -197,6 +197,22 @@ __global__ void findNextLocations(Location *places, int numPlaces, curandState_t
 			}
 		}
 	}
+}
+
+__global__ void d_findNextLocations(Location *places, int numPlaces, curandState_t* states) {
+	int loc_idx = blockIdx.x;
+	Location* loc_ptr = &places[loc_idx];
+	int person_idx = threadIdx.x;
+	Person* person_ptr = &loc_ptr->people[person_idx];
+
+	float r = curand_uniform(&states[0]);
+	int new_loc_idx = (int) (curand_uniform(&states[0]) * numPlaces);
+	if (r > MOVEMENT_PROBABILITY || loc_ptr->num_people_next_step < MAX_LOCATION_CAPACITY - 1) {
+		new_loc_idx = loc_idx;
+	}
+	int person_new_idx = atomicInc(&places[new_loc_idx].num_people_next_step, 1);
+	memcpy(&places[new_loc_idx].people_next_step[person_new_idx], person_ptr, sizeof(Person));
+
 }
 
 int main(int argc, char** argv){
@@ -325,7 +341,7 @@ int main(int argc, char** argv){
 
 		//cudaMemcpy(host_places, dev_places, num_locs * sizeof(struct Location), cudaMemcpyDeviceToHost);
 
-		findNextLocations<<<1, 1>>>(dev_places, num_locs, states);
+		d_findNextLocations<<<num_locs, BLOCK_WIDTH>>>(dev_places, num_locs, states);
 		if (DEBUG) std::cout << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
 	}
 
