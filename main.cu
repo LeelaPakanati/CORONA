@@ -195,9 +195,8 @@ __global__ void findNextLocations(Location *places, int numPlaces, curandState_t
 	if (r > MOVEMENT_PROBABILITY || loc_ptr->num_people_next_step < MAX_LOCATION_CAPACITY - 1) {
 		new_loc_idx = loc_idx;
 	}
-	int person_new_idx = atomicInc(&places[new_loc_idx].num_people_next_step, 1);
+	int person_new_idx = atomicAdd(&places[new_loc_idx].num_people_next_step, 1);
 	memcpy(&places[new_loc_idx].people_next_step[person_new_idx], person_ptr, sizeof(Person));
-
 }
 
 int main(int argc, char** argv){
