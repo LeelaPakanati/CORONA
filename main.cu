@@ -40,9 +40,9 @@ void initialize(Location *places, int numPeople, int numPlaces) {
 		places[loc_idx].people_next_step[places[loc_idx].num_people_next_step++].id = i;
 	}
 
-	for(int i = 1; i < numPlaces; i++) {
-		std::clog << "Location " << i << " has " << places[i].num_people_next_step << " people." << std::endl;
-	}
+	//for(int i = 1; i < numPlaces; i++) {
+	//	std::clog << "Location " << i << " has " << places[i].num_people_next_step << " people." << std::endl;
+	//}
 }
 
 __global__ void init(unsigned int seed, curandState_t* states){
@@ -190,13 +190,15 @@ __global__ void findNextLocations(Location *places, int numPlaces, curandState_t
 	int person_idx = threadIdx.x;
 	Person* person_ptr = &loc_ptr->people[person_idx];
 
-	float r = curand_uniform(&states[0]);
-	int new_loc_idx = (int) (curand_uniform(&states[0]) * numPlaces);
-	if (r > MOVEMENT_PROBABILITY || loc_ptr->num_people_next_step < MAX_LOCATION_CAPACITY - 1) {
-		new_loc_idx = loc_idx;
+	if (person_idx < loc_ptr->num_people){
+		float r = curand_uniform(&states[0]);
+		int new_loc_idx = (int) (curand_uniform(&states[0]) * numPlaces);
+		if (r > MOVEMENT_PROBABILITY || loc_ptr->num_people_next_step < MAX_LOCATION_CAPACITY - 1) {
+			new_loc_idx = loc_idx;
+		}
+		int person_new_idx = atomicAdd(&places[new_loc_idx].num_people_next_step, 1);
+		memcpy(&places[new_loc_idx].people_next_step[person_new_idx], person_ptr, sizeof(Person));
 	}
-	int person_new_idx = atomicAdd(&places[new_loc_idx].num_people_next_step, 1);
-	memcpy(&places[new_loc_idx].people_next_step[person_new_idx], person_ptr, sizeof(Person));
 }
 
 int main(int argc, char** argv){
