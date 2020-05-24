@@ -1,7 +1,6 @@
 debug:1
 population_size:15000
 num_locations:400
-max_size:300
 initial_infected:2
 SPREAD_FACTOR:0.005
 CARRIER_PROBABILITY:0.1

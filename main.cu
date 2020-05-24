@@ -40,9 +40,9 @@ void initialize(Location *places, int numPeople, int numPlaces) {
 		places[loc_idx].people_next_step[places[loc_idx].num_people_next_step++].id = i;
 	}
 
-	for(int i = 1; i < numPlaces; i++) {
-		std::clog << "Location " << i << " has " << places[i].num_people_next_step << " people." << std::endl;
-	}
+	//for(int i = 1; i < numPlaces; i++) {
+	//	std::clog << "Location " << i << " has " << places[i].num_people_next_step << " people." << std::endl;
+	//}
 }
 
 __global__ void init(unsigned int seed, curandState_t* states){
@@ -180,17 +180,19 @@ __global__ void collectStatistics(Location *places, int* susceptible, int* infec
 
 
 __global__ void findNextLocations(Location *places, int numPlaces, curandState_t* states) {
-	int new_loc_idx;
-	for (int loc_idx = 0; loc_idx < numPlaces; loc_idx++) {
-		for (int person_idx = 0; person_idx < places[loc_idx].num_people; person_idx++) {
-			float r = curand_uniform(&states[0]);
-			new_loc_idx = (int) (curand_uniform(&states[0]) * numPlaces);
-			if (r < MOVEMENT_PROBABILITY && places[new_loc_idx].num_people_next_step < MAX_LOCATION_CAPACITY - 1) {
-				memcpy(&places[new_loc_idx].people_next_step[places[new_loc_idx].num_people_next_step++], &places[loc_idx].people[person_idx], sizeof(Person));
-			} else {
-				memcpy(&places[loc_idx].people_next_step[places[loc_idx].num_people_next_step++], &places[loc_idx].people[person_idx], sizeof(Person));
-			}
+	int loc_idx = blockIdx.x;
+	Location* loc_ptr = &places[loc_idx];
+	int person_idx = threadIdx.x;
+	Person* person_ptr = &loc_ptr->people[person_idx];
+
+	if (person_idx < loc_ptr->num_people){
+		float r = curand_uniform(&states[blockIdx.x*blockDim.x+threadIdx.x]);
+		int new_loc_idx = (int) (curand_uniform(&states[blockIdx.x*blockDim.x+threadIdx.x]) * numPlaces);
+		if (r > MOVEMENT_PROBABILITY || places[new_loc_idx].num_people_next_step >= MAX_LOCATION_CAPACITY - 1) {
+			new_loc_idx = loc_idx;
 		}
+		int person_new_idx = atomicAdd(&places[new_loc_idx].num_people_next_step, 1);
+		memcpy(&places[new_loc_idx].people_next_step[person_new_idx], person_ptr, sizeof(Person));
 	}
 }
 
@@ -211,7 +213,6 @@ int main(int argc, char** argv){
 	std::string myText;
 	int pop_size = 0;
 	int num_locs = 0;
-	int max_size = 0;
 	int num_infected = 0;
 	Disease disease;
 
@@ -229,9 +230,6 @@ int main(int argc, char** argv){
 				break;
 			case e_num_locations:
 				num_locs = atoi(value.c_str());
-				break;
-			case e_max_size:
-				max_size = atoi(value.c_str());
 				break;
 			case e_initial_infected:
 				num_infected = atoi(value.c_str());
@@ -300,7 +298,6 @@ int main(int argc, char** argv){
 
 	if(DEBUG) std::cout << "Susceptible,Infected,Recovered,Deceased" << std::endl;
 
-	if (DEBUG) std::cout << "Susceptible,Infected,Recovered,Deceased" << std::endl;
 	cudaMemcpy(dev_places, host_places, num_locs * sizeof(struct Location), cudaMemcpyHostToDevice);
 	for(int hour = 0; num_infected > 0 && hour < SIMULATION_LENGTH; hour++) {
 
@@ -323,7 +320,7 @@ int main(int argc, char** argv){
 
 		//cudaMemcpy(host_places, dev_places, num_locs * sizeof(struct Location), cudaMemcpyDeviceToHost);
 
-		findNextLocations<<<1, 1>>>(dev_places, num_locs, states);
+		findNextLocations<<<num_locs, BLOCK_WIDTH>>>(dev_places, num_locs, states);
 		if (DEBUG) std::cout << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
 	}
 
