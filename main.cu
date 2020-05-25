@@ -32,7 +32,6 @@ void initialize(Location *places, int numPeople, int numPlaces) {
 
 	int loc_idx;
 	for(int i = 0; i < numPeople; i++) {
-		//make sure within max size
 		loc_idx = rand() % numPlaces;
 		places[loc_idx].people_next_step[places[loc_idx].num_people_next_step].infection_status = SUSCEPTIBLE;
 		places[loc_idx].people_next_step[places[loc_idx].num_people_next_step].state_count = 0;
@@ -42,11 +41,13 @@ void initialize(Location *places, int numPeople, int numPlaces) {
 
 }
 
+// initialize curand
 __global__ void init(unsigned int seed, curandState_t* states){
 	unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	curand_init(seed, idx, 0, &states[idx]); 
 }
 
+// replace people array with people_next_step
 __global__ void updateLocations(Location *places) {
 	int loc_idx = blockIdx.x;
 	Location* loc_ptr = &places[loc_idx];
@@ -55,6 +56,7 @@ __global__ void updateLocations(Location *places) {
 	loc_ptr->num_people_next_step = 0;
 }
 
+// determine if sick people at location and spread disease accordingly
 __global__ void spreadDisease(Location* places, Disease disease, curandState_t* states) {
 	int loc_idx = blockIdx.x;
 	Location* loc_ptr = &places[loc_idx];
@@ -90,6 +92,7 @@ __global__ void spreadDisease(Location* places, Disease disease, curandState_t* 
 	}
 }
 
+// advance infection status for sick people
 __global__ void advanceInfection(Location* places, Disease disease, curandState_t* states){
 	int loc_idx = blockIdx.x;
 	Location* loc_ptr = &places[loc_idx];
@@ -129,6 +132,7 @@ __global__ void advanceInfection(Location* places, Disease disease, curandState_
 	}
 }
 
+// collect statistics about infected status of people at each location
 __global__ void collectStatistics(Location *places, int* susceptible, int* infected, int* recovered, int* deceased) {
 	int loc_idx = blockIdx.x;
 	Location* loc_ptr = &places[loc_idx];
@@ -179,10 +183,12 @@ __global__ void collectStatistics(Location *places, int* susceptible, int* infec
 
 }
 
+// add up statistics of all locations
 __global__ void addStatistics(int pow2_num_locs, int* susceptible, int* infected, int* recovered, int* deceased, int* stats, int hour) {
 	//using reduction to count stats
 	for (unsigned int stride = pow2_num_locs/2; stride > 0; stride /= 2){
 		__syncthreads();
+		// switch over blockIdx so no control divergence
 		if (threadIdx.x + stride < blockDim.x){
 			switch(blockIdx.x) {
 				case 0:
@@ -205,7 +211,6 @@ __global__ void addStatistics(int pow2_num_locs, int* susceptible, int* infected
 
 	__syncthreads();
 
-	// switch over blockIdx so no control divergence
 	if(threadIdx.x == 0){
 		switch(blockIdx.x) {
 			case 0:
@@ -228,6 +233,7 @@ __global__ void addStatistics(int pow2_num_locs, int* susceptible, int* infected
 
 
 
+// determine next location for people
 __global__ void findNextLocations(Location *places, int numPlaces, curandState_t* states) {
 	int loc_idx = blockIdx.x;
 	Location* loc_ptr = &places[loc_idx];
@@ -244,6 +250,8 @@ __global__ void findNextLocations(Location *places, int numPlaces, curandState_t
 	if (person_idx < loc_ptr->num_people){
 		float r = curand_uniform(&states[blockIdx.x*blockDim.x+threadIdx.x]);
 		int new_loc_idx = (int) (curand_uniform(&states[blockIdx.x*blockDim.x+threadIdx.x]) * numPlaces);
+
+		// if probability matches to go to new location && new location isn't full; or if current location is full, go to new loc
 		if ((r < MOVEMENT_PROBABILITY && places[new_loc_idx].num_people_next_step < MAX_LOCATION_CAPACITY - 1)
 				|| (local_num_people_next_step + places[new_loc_idx].num_people_next_step > MAX_LOCATION_CAPACITY) ){
 
@@ -257,11 +265,10 @@ __global__ void findNextLocations(Location *places, int numPlaces, curandState_t
 
 	__syncthreads();
 
+	// combine global and local copies of next people arrays for location
 	if(threadIdx.x < local_num_people_next_step){
 		memcpy(&places[loc_idx].people_next_step[places[loc_idx].num_people_next_step + threadIdx.x], &local_people_next_step[threadIdx.x], sizeof(Person));	
 	}
-
-	__syncthreads();
 
 	if(threadIdx.x == 0)
 		places[loc_idx].num_people_next_step += local_num_people_next_step;
