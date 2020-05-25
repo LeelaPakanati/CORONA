@@ -40,9 +40,6 @@ void initialize(Location *places, int numPeople, int numPlaces) {
 		places[loc_idx].people_next_step[places[loc_idx].num_people_next_step++].id = i;
 	}
 
-	//for(int i = 1; i < numPlaces; i++) {
-	//	std::clog << "Location " << i << " has " << places[i].num_people_next_step << " people." << std::endl;
-	//}
 }
 
 __global__ void init(unsigned int seed, curandState_t* states){
@@ -179,7 +176,34 @@ __global__ void collectStatistics(Location *places, int* susceptible, int* infec
 	infected[loc_idx] = num_i;
 	recovered[loc_idx] = num_r;
 	deceased[loc_idx] = num_d;
+
 }
+
+__global__ void addStatistics(int pow2_num_locs, int* susceptible, int* infected, int* recovered, int* deceased) {
+	//using reduction to count stats
+	for (unsigned int stride = pow2_num_locs/2; stride > 0; stride /= 2){
+		__syncthreads();
+		if (threadIdx.x + stride < blockDim.x){
+			switch(blockIdx.x) {
+				case 0:
+					susceptible[threadIdx.x] += susceptible[threadIdx.x+stride];
+					break;
+				case 1:
+					infected[threadIdx.x] += infected[threadIdx.x+stride];
+					break;
+				case 2:
+					recovered[threadIdx.x] += recovered[threadIdx.x+stride];
+					break;
+				case 3:
+					deceased[threadIdx.x] += deceased[threadIdx.x+stride];
+					break;
+				default:
+					break;
+			}
+		}
+	}
+}
+
 
 
 __global__ void findNextLocations(Location *places, int numPlaces, curandState_t* states) {
@@ -322,6 +346,8 @@ int main(int argc, char** argv){
 	cudaMalloc((void**) &d_num_recovered, num_locs*sizeof(int));
 	cudaMalloc((void**) &d_num_deceased, num_locs*sizeof(int));
 
+	int pow2_num_locs = pow(2, ceil(log2(num_locs)));
+
 	if(DEBUG) std::cout << "Susceptible,Infected,Recovered,Deceased" << std::endl;
 	cudaMemcpy(dev_places, host_places, num_locs * sizeof(struct Location), cudaMemcpyHostToDevice);
 	for(int hour = 0; num_infected > 0 && hour < SIMULATION_LENGTH; hour++) {
@@ -331,17 +357,12 @@ int main(int argc, char** argv){
 		spreadDisease<<<num_locs, BLOCK_WIDTH>>>(dev_places, disease, states);
 		advanceInfection<<<num_locs, BLOCK_WIDTH>>>(dev_places, disease, states);
 		collectStatistics<<<num_locs, BLOCK_WIDTH>>>(dev_places, d_num_susceptible, d_num_infected, d_num_recovered, d_num_deceased);
-		//simulationKernel<<<num_locs, BLOCK_WIDTH>>>(dev_places, disease, seed, d_num_susceptible, d_num_infected, d_num_recovered, d_num_deceased);
+		addStatistics<<<4, num_locs>>>(pow2_num_locs, d_num_susceptible, d_num_infected, d_num_recovered, d_num_deceased);
 
-		thrust::device_ptr<int> d_sus_ptr(d_num_susceptible);
-		thrust::device_ptr<int> d_inf_ptr(d_num_infected);
-		thrust::device_ptr<int> d_rec_ptr(d_num_recovered);
-		thrust::device_ptr<int> d_dec_ptr(d_num_deceased);
-
-		num_susceptible = thrust::reduce(d_sus_ptr, d_sus_ptr + num_locs);
-		num_infected = thrust::reduce(d_inf_ptr, d_inf_ptr + num_locs);
-		num_recovered = thrust::reduce(d_rec_ptr, d_rec_ptr + num_locs);
-		num_deceased = thrust::reduce(d_dec_ptr, d_dec_ptr + num_locs);
+		cudaMemcpy(&num_susceptible, &d_num_susceptible[0], sizeof(int), cudaMemcpyDeviceToHost);
+		cudaMemcpy(&num_infected, &d_num_infected[0], sizeof(int), cudaMemcpyDeviceToHost);
+		cudaMemcpy(&num_recovered, &d_num_recovered[0], sizeof(int), cudaMemcpyDeviceToHost);
+		cudaMemcpy(&num_deceased, &d_num_deceased[0], sizeof(int), cudaMemcpyDeviceToHost);
 
 		findNextLocations<<<num_locs, BLOCK_WIDTH>>>(dev_places, num_locs, states);
 		if (DEBUG) std::cout << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
