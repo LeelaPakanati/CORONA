@@ -9,6 +9,11 @@
 #include "./datatypes/disease.cpp"
 #include "./string_code.cpp"
 
+/*
+Taylor Chatfield, Leela Pakanati
+Single-Threaded Simulation
+*/
+
 // temporary
 #define MOVEMENT_PROBABILITY .1
 

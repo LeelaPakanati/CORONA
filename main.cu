@@ -14,6 +14,11 @@
 #include "./datatypes/disease.cpp"
 #include "./string_code.cpp"
 
+/*
+Taylor Chatfield, Leela Pakanati
+Optimized parallelized simulation implementation
+*/
+
 #define BLOCK_WIDTH 256
 // temporary
 #define MOVEMENT_PROBABILITY .1
