@@ -64,31 +64,22 @@ __global__ void spreadDisease(Location* places, Disease disease, curandState_t* 
 	int person_idx;
 
 	//determine spread of infection from infected to healthy
-	__shared__ bool has_sick[BLOCK_WIDTH];
-	has_sick[threadIdx.x] = false;
+	__shared__ int num_sick;
+	if (threadIdx.x == 0){
+		num_sick = 0;
+	}
 
-	//for(int i = 0; i < loc_ptr->num_people/blockDim.x+1; i++){
-	//	person_idx = i*blockDim.x + threadIdx.x;
 	person_idx = threadIdx.x;
 	Person* person_ptr = &loc_ptr->people[person_idx];
 
 	if (person_idx < loc_ptr->num_people){															// Minimal control divergence
-		has_sick[threadIdx.x] =  ((person_ptr->infection_status == SICK) || (person_ptr->infection_status == CARRIER)); 
+		atomicAdd(&num_sick, ((person_ptr->infection_status == SICK) || (person_ptr->infection_status == CARRIER)));
 	}
-	//}
 
 	__syncthreads();
 
-	// Inneficient; use reduction?
-	bool spread = false;
-	for(int i = 0; i < BLOCK_WIDTH; i++)
-		if (has_sick[i])
-			spread = true;
-
 	// Propogate infections in places with infected people
-	if (spread) {
-		//for(int i = 0; i < loc_ptr->num_people/blockDim.x+1; i++){
-		//	person_idx = i*blockDim.x + threadIdx.x;
+	if (num_sick > 0) {
 		Person* person_ptr = &loc_ptr->people[person_idx];
 		if (person_idx < loc_ptr->num_people){															// Minimal control divergence
 			if (person_ptr->infection_status == SUSCEPTIBLE){										// A lot of control divergence
@@ -99,7 +90,6 @@ __global__ void spreadDisease(Location* places, Disease disease, curandState_t* 
 				}
 			}
 		}
-		//}
 	}
 }
 
@@ -108,8 +98,6 @@ __global__ void advanceInfection(Location* places, Disease disease, curandState_
 	Location* loc_ptr = &places[loc_idx];
 	int person_idx;
 
-	//for(int i = 0; i < loc_ptr->num_people/blockDim.x+1; i++){
-	//	person_idx = i*blockDim.x + threadIdx.x;
 	person_idx = threadIdx.x;
 	Person* person_ptr = &loc_ptr->people[person_idx];
 	if (person_idx < loc_ptr->num_people){															// Minimal control divergence
@@ -141,8 +129,7 @@ __global__ void advanceInfection(Location* places, Disease disease, curandState_
 			default:
 				break;
 		}
-		//}
-}
+	}
 }
 
 __global__ void collectStatistics(Location *places, int* susceptible, int* infected, int* recovered, int* deceased) {
@@ -196,7 +183,7 @@ __global__ void findNextLocations(Location *places, int numPlaces, curandState_t
 		float r = curand_uniform(&states[blockIdx.x*blockDim.x+threadIdx.x]);
 		int new_loc_idx = (int) (curand_uniform(&states[blockIdx.x*blockDim.x+threadIdx.x]) * numPlaces);
 		if ((r < MOVEMENT_PROBABILITY && places[new_loc_idx].num_people_next_step < MAX_LOCATION_CAPACITY - 1)
-			|| (local_num_people_next_step + places[new_loc_idx].num_people_next_step > MAX_LOCATION_CAPACITY) ){
+				|| (local_num_people_next_step + places[new_loc_idx].num_people_next_step > MAX_LOCATION_CAPACITY) ){
 
 			int person_new_idx = atomicAdd(&places[new_loc_idx].num_people_next_step, 1);
 			memcpy(&places[new_loc_idx].people_next_step[person_new_idx], person_ptr, sizeof(Person));
@@ -243,7 +230,7 @@ int main(int argc, char** argv){
 		//std::cout << myText << std::endl;
 		std::string token = myText.substr(0, myText.find(":"));
 		std::string value = myText.substr(myText.find(":") + 1);
-		
+
 		switch (hash_it(token)) {
 			case e_debug:
 				DEBUG = atoi(value.c_str());
