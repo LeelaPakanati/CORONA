@@ -137,32 +137,48 @@ __global__ void collectStatistics(Location *places, int* susceptible, int* infec
 	Location* loc_ptr = &places[loc_idx];
 	int person_idx = threadIdx.x;
 	Person* person_ptr = &loc_ptr->people[person_idx];
-	int idx = loc_idx * MAX_LOCATION_CAPACITY + person_idx;
-	susceptible[idx] = 0;
-	infected[idx] = 0;
-	recovered[idx] = 0;
-	deceased[idx] = 0;
+
+	__shared__ int num_s;
+	__shared__ int num_i;
+	__shared__ int num_r;
+	__shared__ int num_d;
+	
+	if(threadIdx.x == 0){
+		num_s = 0;
+		num_i = 0;
+		num_r = 0;
+		num_d = 0;
+	}
+
+	__syncthreads();
+
 	if (person_idx < loc_ptr->num_people){
 		switch (person_ptr->infection_status) {	//massive control divergence
 			case SUSCEPTIBLE:
-				susceptible[idx] = 1;
+				atomicAdd(&num_s, 1);
 				break;
 			case CARRIER:
-				infected[idx] = 1;
-				break;
+				atomicAdd(&num_i, 1);
 			case SICK:
-				infected[idx] = 1;
+				atomicAdd(&num_i, 1);
 				break;
 			case RECOVERED:
-				recovered[idx] = 1;
+				atomicAdd(&num_r, 1);
 				break;
 			case DECEASED:
-				deceased[idx] = 1;
+				atomicAdd(&num_d, 1);
 				break;
 			default:
 				break;
 		}
 	}
+
+	__syncthreads();
+
+	susceptible[loc_idx] = num_s;
+	infected[loc_idx] = num_i;
+	recovered[loc_idx] = num_r;
+	deceased[loc_idx] = num_d;
 }
 
 
@@ -301,10 +317,10 @@ int main(int argc, char** argv){
 	// Susciptible/Infected/Recovered/Deceased
 	int num_susceptible, num_recovered, num_deceased;
 	int *d_num_susceptible, *d_num_recovered, *d_num_deceased, *d_num_infected;
-	cudaMalloc((void**) &d_num_susceptible, num_locs*MAX_LOCATION_CAPACITY*sizeof(int));
-	cudaMalloc((void**) &d_num_infected, num_locs*MAX_LOCATION_CAPACITY*sizeof(int));
-	cudaMalloc((void**) &d_num_recovered, num_locs*MAX_LOCATION_CAPACITY*sizeof(int));
-	cudaMalloc((void**) &d_num_deceased, num_locs*MAX_LOCATION_CAPACITY*sizeof(int));
+	cudaMalloc((void**) &d_num_susceptible, num_locs*sizeof(int));
+	cudaMalloc((void**) &d_num_infected, num_locs*sizeof(int));
+	cudaMalloc((void**) &d_num_recovered, num_locs*sizeof(int));
+	cudaMalloc((void**) &d_num_deceased, num_locs*sizeof(int));
 
 	if(DEBUG) std::cout << "Susceptible,Infected,Recovered,Deceased" << std::endl;
 	cudaMemcpy(dev_places, host_places, num_locs * sizeof(struct Location), cudaMemcpyHostToDevice);
@@ -322,12 +338,10 @@ int main(int argc, char** argv){
 		thrust::device_ptr<int> d_rec_ptr(d_num_recovered);
 		thrust::device_ptr<int> d_dec_ptr(d_num_deceased);
 
-		num_susceptible = thrust::reduce(d_sus_ptr, d_sus_ptr + num_locs*MAX_LOCATION_CAPACITY);
-		num_infected = thrust::reduce(d_inf_ptr, d_inf_ptr + num_locs*MAX_LOCATION_CAPACITY);
-		num_recovered = thrust::reduce(d_rec_ptr, d_rec_ptr + num_locs*MAX_LOCATION_CAPACITY);
-		num_deceased = thrust::reduce(d_dec_ptr, d_dec_ptr + num_locs*MAX_LOCATION_CAPACITY);
-
-		//cudaMemcpy(host_places, dev_places, num_locs * sizeof(struct Location), cudaMemcpyDeviceToHost);
+		num_susceptible = thrust::reduce(d_sus_ptr, d_sus_ptr + num_locs);
+		num_infected = thrust::reduce(d_inf_ptr, d_inf_ptr + num_locs);
+		num_recovered = thrust::reduce(d_rec_ptr, d_rec_ptr + num_locs);
+		num_deceased = thrust::reduce(d_dec_ptr, d_dec_ptr + num_locs);
 
 		findNextLocations<<<num_locs, BLOCK_WIDTH>>>(dev_places, num_locs, states);
 		if (DEBUG) std::cout << num_susceptible << "," << num_infected << "," << num_recovered << "," << num_deceased << std::endl;
