@@ -1,3 +1,12 @@
+//----------------------------------
+// File: diseas.h
+// Author: Leela Pakanati, Taylor Chatfield
+// Class: ECE497 Cuda Programming
+// Assignment: Final Project
+// Purpose: Disease Struct
+// Date: 5/25/2020
+//----------------------------------
+
 #ifndef DISEASE_H
 #define DISEASE_H
 

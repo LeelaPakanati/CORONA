@@ -1,3 +1,12 @@
+//----------------------------------
+// File: main.cpp
+// Author: Leela Pakanati, Taylor Chatfield
+// Class: ECE497 Cuda Programming
+// Assignment: Final Project
+// Purpose: Single-Threaded Simulation Implementation
+// Date: 5/25/2020
+//----------------------------------
+
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -8,11 +17,6 @@
 #include "./datatypes/person.cpp"
 #include "./datatypes/disease.cpp"
 #include "./string_code.cpp"
-
-/*
-Taylor Chatfield, Leela Pakanati
-Single-Threaded Simulation
-*/
 
 // temporary
 #define MOVEMENT_PROBABILITY .1

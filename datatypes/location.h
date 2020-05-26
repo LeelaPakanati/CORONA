@@ -1,3 +1,12 @@
+//----------------------------------
+// File: location.cpp
+// Author: Leela Pakanati, Taylor Chatfield
+// Class: ECE497 Cuda Programming
+// Assignment: Final Project
+// Purpose: Location Struct
+// Date: 5/25/2020
+//----------------------------------
+
 #ifndef LOCATION_H
 #define LOCATION_H
 

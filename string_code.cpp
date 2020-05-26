@@ -1,3 +1,12 @@
+//----------------------------------
+// File: string_code.cpp
+// Author: Leela Pakanati, Taylor Chatfield
+// Class: ECE497 Cuda Programming
+// Assignment: Final Project
+// Purpose: Enum for input file parsing
+// Date: 5/25/2020
+//----------------------------------
+
 enum string_code {
 	e_debug,
 	e_population_size,

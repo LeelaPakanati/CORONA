@@ -1,6 +1,10 @@
-#include "location.h"
+//----------------------------------
+// File: location.cpp
+// Author: Leela Pakanati, Taylor Chatfield
+// Class: ECE497 Cuda Programming
+// Assignment: Final Project
+// Purpose: Location Struct
+// Date: 5/25/2020
+//----------------------------------
 
-/*
-Taylor Chatfield, Leela Pakanati
-Tracks list of entities at a given location
-*/
+#include "location.h"

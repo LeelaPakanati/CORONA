@@ -1,3 +1,12 @@
+//----------------------------------
+// File: person.h
+// Author: Leela Pakanati, Taylor Chatfield
+// Class: ECE497 Cuda Programming
+// Assignment: Final Project
+// Purpose: Person Struct
+// Date: 5/25/2020
+//----------------------------------
+
 #ifndef PERSON_H
 #define PERSON_H
 

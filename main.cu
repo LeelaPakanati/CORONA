@@ -1,3 +1,12 @@
+//----------------------------------
+// File: main.cu
+// Author: Leela Pakanati, Taylor Chatfield
+// Class: ECE497 Cuda Programming
+// Assignment: Final Project
+// Purpose: Parallelized Simulation Implementation
+// Date: 5/25/2020
+//----------------------------------
+
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -13,12 +22,6 @@
 #include "./datatypes/person.cpp"
 #include "./datatypes/disease.cpp"
 #include "./string_code.cpp"
-
-/*
-Taylor Chatfield, Leela Pakanati
-Optimized parallelized simulation implementation
-*/
-
 #define BLOCK_WIDTH 256
 // temporary
 #define MOVEMENT_PROBABILITY .1

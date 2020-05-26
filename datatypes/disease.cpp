@@ -1,6 +1,10 @@
-#include "disease.h"
+//----------------------------------
+// File: disease.cpp
+// Author: Leela Pakanati, Taylor Chatfield
+// Class: ECE497 Cuda Programming
+// Assignment: Final Project
+// Purpose: Disease Struct
+// Date: 5/25/2020
+//----------------------------------
 
-/*
-Taylor Chatfield, Leela Pakanati
-Disease struct tracks disease spread parameters. All of these can be set in a configuration file.
-*/
+#include "disease.h"
