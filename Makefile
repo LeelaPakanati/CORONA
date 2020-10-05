@@ -1,14 +1,14 @@
 CC=g++
 CUDA_CC=nvcc
 
-all: cpp cuda
+all: cpu cuda
 
 debug: cpu-debug cuda-debug
 
 cpu-debug: main.cpp datatypes/*.cpp datatypes/*.h
 	$(CC) main.cpp -g -O0 -o main
 
-cpp: main.cpp datatypes/*.cpp datatypes/*.h
+cpu: main.cpp datatypes/*.cpp datatypes/*.h
 	$(CC) main.cpp -o main
 
 cuda: main.cpp datatypes/*.cpp datatypes/*.h
